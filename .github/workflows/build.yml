@@ -66,17 +66,13 @@ jobs:
           gradle :app:assembleRelease --no-daemon --stacktrace
           V=$(grep versionName app/build.gradle.kts | sed 's/.*"\(.*\)".*/\1/')
           cp app/build/outputs/apk/release/app-release.apk "cine-vogue-$V.apk"
+          echo "VERSION=$V" >> "$GITHUB_ENV"
 
       - name: Publier l'APK
-        if: env.APK == 'true' && startsWith(github.ref, 'refs/tags/v')
+        if: env.APK == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          name: Ciné Vogue ${{ github.ref_name }}
+          tag_name: v${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          name: Ciné Vogue ${{ env.VERSION }}
           files: cine-vogue-*.apk
-
-      - name: APK (lancement manuel)
-        if: env.APK == 'true' && !startsWith(github.ref, 'refs/tags/v')
-        uses: actions/upload-artifact@v4
-        with:
-          name: cine-vogue-apk
-          path: cine-vogue-*.apk
