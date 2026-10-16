@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#22060B</color>
+    <color name="header">#7A0E1C</color>
+    <color name="nav">#180408</color>
+    <style name="Theme.CineVogue" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/header</item>
+        <item name="android:navigationBarColor">@color/nav</item>
+    </style>
+</resources>
