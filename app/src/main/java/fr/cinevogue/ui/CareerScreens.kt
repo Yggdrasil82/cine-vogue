@@ -40,7 +40,7 @@ private fun ScreenTitle(text: String) {
 }
 
 @Composable
-fun TrophiesScreen(genres: List<Genre>, p: Progress, gender: Gender) {
+fun TrophiesScreen(genres: List<Genre>, p: Progress, gender: Gender, films: List<Genre> = emptyList()) {
     val rank = rankFor(p.points)
     Column(
         Modifier
@@ -74,7 +74,7 @@ fun TrophiesScreen(genres: List<Genre>, p: Progress, gender: Gender) {
         }
 
         SectionTitle("Récompenses", 24)
-        trophies(genres, p, gender).forEach { t ->
+        trophies(genres, p, gender, films).forEach { t ->
             Row(
                 Modifier
                     .fillMaxWidth()

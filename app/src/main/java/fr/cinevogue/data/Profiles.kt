@@ -6,6 +6,9 @@ import org.json.JSONObject
 
 enum class Gender { FILLE, GARCON }
 
+/** Les films choisis par un profil, dans l'ordre du catalogue. */
+fun filmsOf(p: Profile): List<Genre> = filmsOfLevel(p.level).filter { it.id in p.films }
+
 data class Profile(
     val id: String,
     val name: String,
@@ -14,6 +17,8 @@ data class Profile(
     val color: Int,
     val voice: String?,
     val prefs: String,
+    /** Films choisis (identifiants). */
+    val films: List<String> = emptyList(),
 )
 
 /** Réglages communs à toute la famille. */
@@ -43,6 +48,7 @@ class ProfileRepo(context: Context) {
                     color = o.optInt("color", 0),
                     voice = if (o.isNull("voice")) null else o.optString("voice").ifBlank { null },
                     prefs = o.getString("prefs"),
+                    films = o.optJSONArray("films")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
                 )
             }
         } catch (e: Exception) {
@@ -61,7 +67,8 @@ class ProfileRepo(context: Context) {
                     .put("level", p.level.name)
                     .put("color", p.color)
                     .put("voice", p.voice ?: JSONObject.NULL)
-                    .put("prefs", p.prefs),
+                    .put("prefs", p.prefs)
+                    .put("films", JSONArray(p.films)),
             )
         }
         app.edit().putString("profiles", arr.toString()).apply()
@@ -71,11 +78,11 @@ class ProfileRepo(context: Context) {
     fun hasLegacyProgress(): Boolean =
         profiles().isEmpty() && (legacy.getInt("points", 0) > 0 || !legacy.getString("scenes", "").isNullOrEmpty())
 
-    fun create(name: String, gender: Gender, level: Level, color: Int): Profile {
+    fun create(name: String, gender: Gender, level: Level, color: Int, films: List<String>): Profile {
         val list = profiles()
         val id = "p" + System.currentTimeMillis()
         val prefs = if (list.none { it.prefs == LEGACY }) LEGACY else "cinevogue_$id"
-        val profile = Profile(id, name.trim(), gender, level, color, null, prefs)
+        val profile = Profile(id, name.trim(), gender, level, color, null, prefs, films)
         write(list + profile)
         return profile
     }

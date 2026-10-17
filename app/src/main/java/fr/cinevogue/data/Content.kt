@@ -41,7 +41,8 @@ enum class Level(val label: String, val detail: String) {
 
 fun genresFor(level: Level): List<Genre> = if (level == Level.AVANCE) ADVANCED else BEGINNER
 
-val ALL_GENRES: List<Genre> get() = BEGINNER + ADVANCED
+/** Thèmes et films, tous niveaux confondus. */
+val ALL_GENRES: List<Genre> get() = BEGINNER + ADVANCED + FILMS_BEGINNER + FILMS_ADVANCED
 
 internal fun l(speaker: String, en: String, fr: String, gloss: String) = Line(speaker, en, fr, gloss)
 internal fun b(speaker: String, en: String, fr: String, gloss: String, blank: String, why: String, vararg decoys: String) =

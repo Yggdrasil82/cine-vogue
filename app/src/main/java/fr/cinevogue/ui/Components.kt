@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Star
@@ -214,9 +215,9 @@ fun SectionTitle(text: String, size: Int = 26) {
     Text(text, fontFamily = Bebas, fontSize = size.sp, letterSpacing = 1.5.sp, color = Cv.Gold)
 }
 
-enum class Tab { PLATEAU, TROPHEES, PROFIL }
+enum class Tab { PLATEAU, REPLIQUES, TROPHEES, PROFIL }
 
-/** Écran avec la barre du bas (Plateau, Trophées, Profil). */
+/** Écran avec la barre du bas (Plateau, Répliques, Trophées, Profil). */
 @Composable
 fun AppFrame(tab: Tab, onTab: (Tab) -> Unit, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize().background(Cv.Bg)) {
@@ -229,6 +230,7 @@ fun AppFrame(tab: Tab, onTab: (Tab) -> Unit, content: @Composable () -> Unit) {
             horizontalArrangement = Arrangement.SpaceAround,
         ) {
             NavItem("Plateau", Icons.Filled.Home, tab == Tab.PLATEAU) { onTab(Tab.PLATEAU) }
+            NavItem("Répliques", Icons.Filled.Edit, tab == Tab.REPLIQUES) { onTab(Tab.REPLIQUES) }
             NavItem("Trophées", Icons.Filled.Star, tab == Tab.TROPHEES) { onTab(Tab.TROPHEES) }
             NavItem("Profil", Icons.Filled.Person, tab == Tab.PROFIL) { onTab(Tab.PROFIL) }
         }
@@ -240,7 +242,7 @@ private fun NavItem(label: String, icon: ImageVector, active: Boolean, onClick: 
     val color = if (active) Cv.Gold else Cv.Dim
     Column(
         Modifier
-            .widthIn(min = 72.dp)
+            .widthIn(min = 64.dp)
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(vertical = 6.dp),

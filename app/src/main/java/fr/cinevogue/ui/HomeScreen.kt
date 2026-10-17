@@ -46,11 +46,13 @@ import fr.cinevogue.data.scenesDone
 fun HomeScreen(
     profile: Profile,
     genres: List<Genre>,
+    films: List<Genre>,
     p: Progress,
     today: Long,
     onPlay: (String) -> Unit,
     onGenre: (String) -> Unit,
     onSwitch: () -> Unit,
+    onEditFilms: () -> Unit,
 ) {
     val rank = rankFor(p.points)
     val next = nextRank(p.points)
@@ -102,6 +104,33 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { SectionTitle("Mes films") }
+                Text(
+                    "Modifier",
+                    fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Cv.Gold,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(onClick = onEditFilms)
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                )
+            }
+            if (films.isEmpty()) {
+                Text(
+                    "Aucun film choisi. Touche « Modifier » pour choisir tes films préférés.",
+                    fontSize = 14.sp, color = Cv.Muted,
+                )
+            }
+            films.chunked(2).forEach { pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    pair.forEach { f ->
+                        FilmTile(f, scenesDone(f, p), Modifier.weight(1f)) { onGenre(f.id) }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f)) { SectionTitle("À l'affiche") }
                 Pill(profile.level.label.uppercase(), background = Cv.Card, color = Cv.Gold)
             }
@@ -132,6 +161,24 @@ fun HomeScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FilmTile(film: Genre, done: Int, modifier: Modifier, onClick: () -> Unit) {
+    val finished = done == film.scenes.size
+    Column(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Cv.Card)
+            .then(if (finished) Modifier.border(2.dp, Cv.Gold, RoundedCornerShape(14.dp)) else Modifier)
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(film.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, lineHeight = 19.sp, maxLines = 2, minLines = 2)
+        Segments(done, film.scenes.size)
+        Text(if (finished) "Terminé ★" else "$done / ${film.scenes.size} scènes", fontSize = 12.sp, color = if (finished) Cv.Gold else Cv.Muted)
     }
 }
 

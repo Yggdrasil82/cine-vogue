@@ -1,6 +1,11 @@
 package fr.cinevogue.data
 
 import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
+
+/** Une réplique notée par l'utilisateur en regardant un film en VO. */
+data class MyLine(val id: String, val en: String, val fr: String, val film: String)
 
 /** La progression d'un profil, en une photo immuable. */
 data class Progress(
@@ -11,6 +16,7 @@ data class Progress(
     val lastDay: Long = -10L,
     val missed: Set<String> = emptySet(),
     val perfectCount: Int = 0,
+    val myLines: List<MyLine> = emptyList(),
 )
 
 /** Un fichier de sauvegarde par profil. Le premier profil reprend le fichier de la v1.0. */
@@ -25,6 +31,7 @@ class ProgressStore(context: Context, prefsName: String) {
         lastDay = prefs.getLong("lastDay", -10L),
         missed = (prefs.getStringSet("missed", emptySet()) ?: emptySet()).toSet(),
         perfectCount = prefs.getInt("perfect", 0),
+        myLines = decodeLines(prefs.getString("mylines", null)),
     )
 
     fun save(p: Progress) {
@@ -36,11 +43,31 @@ class ProgressStore(context: Context, prefsName: String) {
             .putLong("lastDay", p.lastDay)
             .putStringSet("missed", p.missed.toSet())
             .putInt("perfect", p.perfectCount)
+            .putString("mylines", encodeLines(p.myLines))
             .apply()
     }
 
     fun clear() {
         prefs.edit().clear().apply()
+    }
+
+    private fun encodeLines(lines: List<MyLine>): String {
+        val arr = JSONArray()
+        lines.forEach { arr.put(JSONObject().put("id", it.id).put("en", it.en).put("fr", it.fr).put("film", it.film)) }
+        return arr.toString()
+    }
+
+    private fun decodeLines(raw: String?): List<MyLine> {
+        if (raw.isNullOrBlank()) return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                MyLine(o.getString("id"), o.getString("en"), o.getString("fr"), o.optString("film", ""))
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
     private fun decode(s: String): Map<String, Int> =

@@ -9,6 +9,10 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import fr.cinevogue.data.ADVANCED
 import fr.cinevogue.data.BEGINNER
+import fr.cinevogue.data.FILMS_ADVANCED
+import fr.cinevogue.data.FILMS_BEGINNER
+import fr.cinevogue.data.MyLine
+import fr.cinevogue.data.filmsOf
 import fr.cinevogue.data.Game
 import fr.cinevogue.data.Gender
 import fr.cinevogue.data.Genre
@@ -22,6 +26,8 @@ import fr.cinevogue.ui.AppFrame
 import fr.cinevogue.ui.CineTheme
 import fr.cinevogue.ui.Cv
 import fr.cinevogue.ui.HomeScreen
+import fr.cinevogue.ui.MyLineFormScreen
+import fr.cinevogue.ui.MyLinesScreen
 import fr.cinevogue.ui.PickerScreen
 import fr.cinevogue.ui.ProfileCard
 import fr.cinevogue.ui.ProfileFormScreen
@@ -46,8 +52,12 @@ class CapturesTest {
     )
 
     private val today = 20000L
-    private val lea = Profile("p1", "Léa", Gender.FILLE, Level.DEBUTANT, 0, null, "cinevogue")
-    private val tom = Profile("p2", "Tom", Gender.GARCON, Level.AVANCE, 4, null, "cinevogue_p2")
+    private val lea = Profile("p1", "Léa", Gender.FILLE, Level.DEBUTANT, 0, null, "cinevogue", FILMS_BEGINNER.map { it.id })
+    private val tom = Profile("p2", "Tom", Gender.GARCON, Level.AVANCE, 4, null, "cinevogue_p2", FILMS_ADVANCED.map { it.id })
+    private val lines = listOf(
+        MyLine("l1", "I'm not afraid of anything.", "Je n'ai peur de rien.", "Harry Potter"),
+        MyLine("l2", "We need to find the treasure before them.", "On doit trouver le trésor avant eux.", "Uncharted"),
+    )
     private val sample = Progress(
         points = 120,
         sceneStars = mapOf("g1s1" to 3, "g1s2" to 2, "g1s3" to 2),
@@ -56,6 +66,7 @@ class CapturesTest {
         lastDay = today,
         missed = setOf("g1s2-s1", "g1s3-d0"),
         perfectCount = 1,
+        myLines = lines,
     )
     private val advanced = Progress(points = 185, sceneStars = mapOf("a1s1" to 3, "a1s2" to 3, "a1s3" to 2, "a1s4" to 2, "a2s1" to 2), streak = 5, bestStreak = 5, lastDay = today)
 
@@ -72,7 +83,7 @@ class CapturesTest {
 
     private fun ui(genre: Genre, scene: Scene, game: Game, number: Int, feminine: Boolean = true) =
         QuestionUi(question(genre, scene, game), number, 8, null, false, emptySet(), if (game == Game.CLAP) 7 else null,
-            Studio.sceneNumber(genre, scene), genre.title, feminine)
+            "Scène ${Studio.sceneNumber(genre, scene)}", genre.title, feminine)
 
     @Test
     fun a_qui_tourne() = shot {
@@ -81,17 +92,17 @@ class CapturesTest {
 
     @Test
     fun b_nouveau_profil() = shot {
-        ProfileFormScreen(null, legacyNote = true, onSave = { _, _, _, _ -> }, onCancel = {}, onDelete = null)
+        ProfileFormScreen(null, legacyNote = true, onSave = { _, _, _, _, _ -> }, onCancel = {}, onDelete = null)
     }
 
     @Test
     fun c_accueil_debutant() = shot {
-        AppFrame(Tab.PLATEAU, {}) { HomeScreen(lea, BEGINNER, sample, today, {}, {}, {}) }
+        AppFrame(Tab.PLATEAU, {}) { HomeScreen(lea, BEGINNER, filmsOf(lea), sample.copy(sceneStars = sample.sceneStars + ("f01s1" to 3)), today, {}, {}, {}, {}) }
     }
 
     @Test
     fun d_accueil_avance() = shot {
-        AppFrame(Tab.PLATEAU, {}) { HomeScreen(tom, ADVANCED, advanced, today, {}, {}, {}) }
+        AppFrame(Tab.PLATEAU, {}) { HomeScreen(tom, ADVANCED, filmsOf(tom), advanced, today, {}, {}, {}, {}) }
     }
 
     @Test
@@ -160,5 +171,35 @@ class CapturesTest {
     }
 
     @Test
-    fun l_trophees_acteur() = shot { AppFrame(Tab.TROPHEES, {}) { TrophiesScreen(ADVANCED, advanced, Gender.GARCON) } }
+    fun l_trophees_acteur() = shot { AppFrame(Tab.TROPHEES, {}) { TrophiesScreen(ADVANCED, advanced, Gender.GARCON, filmsOf(tom)) } }
+
+    @Test
+    fun m_film_harry_potter() = shot {
+        val g = FILMS_BEGINNER[0]
+        val u = ui(g, g.scenes[0], Game.SCRIPT, 3)
+        SceneScreen(u.copy(selected = u.q.answer, checked = true), {}, {}, {}, {}, {})
+    }
+
+    @Test
+    fun n_film_interstellar() = shot {
+        val g = FILMS_ADVANCED.first { it.id == "f16" }
+        val u = ui(g, g.scenes[0], Game.SCRIPT, 2, feminine = false)
+        SceneScreen(u.copy(selected = u.q.options.indices.first { it != u.q.answer }, checked = true), {}, {}, {}, {}, {})
+    }
+
+    @Test
+    fun o_mes_repliques() = shot {
+        AppFrame(Tab.REPLIQUES, {}) { MyLinesScreen(lines, {}, {}, {}, {}) }
+    }
+
+    @Test
+    fun p_nouvelle_replique() = shot {
+        MyLineFormScreen(filmsOf(lea).map { it.title }.take(4), {}, { _, _, _ -> }, {})
+    }
+
+    @Test
+    fun q_prise2_ta_replique() = shot {
+        val q = Studio.mySession(lines, BEGINNER, Random(3)).first { it.game == Game.DOUBLAGE }.copy(retake = true)
+        SceneScreen(QuestionUi(q, 6, 8, q.answer, true, emptySet(), null, "Scène 2", "Harry Potter", true), {}, {}, {}, {}, {})
+    }
 }

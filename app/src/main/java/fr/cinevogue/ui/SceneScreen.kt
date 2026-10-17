@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import fr.cinevogue.data.Game
 import fr.cinevogue.data.Question
+import fr.cinevogue.data.Studio
 import kotlinx.coroutines.delay
 
 data class QuestionUi(
@@ -54,7 +55,8 @@ data class QuestionUi(
     val checked: Boolean,
     val eliminated: Set<Int>,
     val secondsLeft: Int?,
-    val sceneNumber: Int,
+    /** En-tête : « Scène 2 » ou « Mes répliques ». */
+    val header: String,
     val genreTitle: String,
     val feminine: Boolean = true,
 )
@@ -83,7 +85,7 @@ fun SceneScreen(
                     Icon(Icons.Filled.Close, contentDescription = "Quitter la scène", tint = Cv.Cream)
                 }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Scène ${ui.sceneNumber} · ${q.game.label}", fontFamily = Bebas, fontSize = 22.sp, letterSpacing = 2.sp, color = Cv.Gold)
+                    Text("${ui.header} · ${q.game.label}", fontFamily = Bebas, fontSize = 22.sp, letterSpacing = 2.sp, color = Cv.Gold)
                     Text(ui.genreTitle, fontSize = 12.sp, color = Cv.Muted)
                 }
                 Text(
@@ -172,7 +174,12 @@ private fun Stage(ui: QuestionUi, onListen: (Boolean) -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        if (q.retake) Pill("PRISE 2 · on la retente")
+        val mine = Studio.isMine(q)
+        when {
+            q.retake && mine -> Pill("PRISE 2 · ta réplique")
+            q.retake -> Pill("PRISE 2 · on la retente")
+            mine -> Pill("TA RÉPLIQUE")
+        }
         when (q.game) {
             Game.DOUBLAGE, Game.SCRIPT -> {
                 q.speaker?.let { name ->

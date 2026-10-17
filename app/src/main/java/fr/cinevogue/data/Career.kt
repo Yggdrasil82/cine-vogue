@@ -70,14 +70,16 @@ fun finishScene(p: Progress, sceneId: String, correct: List<String>, wrong: List
     return updated to stars
 }
 
-fun trophies(genres: List<Genre>, p: Progress, gender: Gender): List<Trophy> {
-    val total = genres.sumOf { scenesDone(it, p) }
+fun trophies(genres: List<Genre>, p: Progress, gender: Gender, films: List<Genre> = emptyList()): List<Trophy> {
+    val total = (genres + films).sumOf { scenesDone(it, p) }
     val top = RANKS.last()
     return listOf(
         Trophy("Premier clap", "Terminer ta première scène", total >= 1),
         Trophy("Sans faute", "Réussir une scène sans aucune erreur", p.perfectCount >= 1),
         Trophy("Série de 3 jours", "Tourner 3 jours de suite", p.bestStreak >= 3),
         Trophy("Une semaine de tournage", "Tourner 7 jours de suite", p.bestStreak >= 7),
+        Trophy("Cinéphile", "Terminer toutes les scènes d'un de tes films", films.any { genreDone(it, p) }),
+        Trophy("Scénariste", "Noter 5 répliques dans « Mes répliques »", p.myLines.size >= 5),
     ) + genres.map { g ->
         Trophy("Prix : ${g.title}", "Terminer « ${g.title} »", genreDone(g, p))
     } + listOf(

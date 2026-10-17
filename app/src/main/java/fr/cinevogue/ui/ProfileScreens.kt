@@ -49,6 +49,7 @@ import fr.cinevogue.VoiceOption
 import fr.cinevogue.data.Gender
 import fr.cinevogue.data.Level
 import fr.cinevogue.data.Profile
+import fr.cinevogue.data.filmsOfLevel
 
 const val MAX_PROFILES = 6
 
@@ -125,7 +126,7 @@ fun PickerScreen(cards: List<ProfileCard>, onPick: (Profile) -> Unit, onAdd: () 
 fun ProfileFormScreen(
     initial: Profile?,
     legacyNote: Boolean,
-    onSave: (name: String, gender: Gender, level: Level, color: Int) -> Unit,
+    onSave: (name: String, gender: Gender, level: Level, color: Int, films: List<String>) -> Unit,
     onCancel: (() -> Unit)?,
     onDelete: (() -> Unit)?,
 ) {
@@ -134,6 +135,9 @@ fun ProfileFormScreen(
     var level by remember { mutableStateOf(initial?.level ?: Level.DEBUTANT) }
     var color by remember { mutableIntStateOf(initial?.color ?: 0) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var films by remember {
+        mutableStateOf(initial?.films?.takeIf { it.isNotEmpty() } ?: filmsOfLevel(initial?.level ?: Level.DEBUTANT).map { it.id })
+    }
 
     Column(Modifier.fillMaxSize().background(Cv.Bg)) {
         Row(
@@ -216,13 +220,32 @@ fun ProfileFormScreen(
 
             SectionTitle("Ton niveau", 22)
             Level.entries.forEach { lv ->
-                Choice(lv.label, lv.detail, level == lv, Modifier.fillMaxWidth()) { level = lv }
+                Choice(lv.label, lv.detail, level == lv, Modifier.fillMaxWidth()) {
+                    if (lv != level) {
+                        level = lv
+                        films = filmsOfLevel(lv).map { it.id }
+                    }
+                }
             }
             if (initial != null && initial.level != level) {
                 Text(
                     "Changer de niveau garde tes étoiles. Les scènes de l'autre niveau restent enregistrées.",
                     fontSize = 13.sp, color = Cv.Muted,
                 )
+            }
+
+            SectionTitle("Tes films", 22)
+            Text("Touche un film pour l'ajouter ou le retirer.", fontSize = 13.sp, color = Cv.Muted)
+            filmsOfLevel(level).chunked(2).forEach { pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    pair.forEach { f ->
+                        val on = f.id in films
+                        Choice(f.title, if (on) "Choisi ✓" else "Ajouter", on, Modifier.weight(1f)) {
+                            films = if (on) films - f.id else films + f.id
+                        }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
             }
 
             if (onDelete != null) {
@@ -237,7 +260,7 @@ fun ProfileFormScreen(
         Box(Modifier.padding(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 20.dp)) {
             GoldButton(
                 if (initial == null) "Créer mon profil" else "Enregistrer",
-                onClick = { onSave(name.trim(), gender, level, color) },
+                onClick = { onSave(name.trim(), gender, level, color, films) },
                 enabled = name.isNotBlank(),
                 modifier = Modifier.fillMaxWidth().height(58.dp),
             )
