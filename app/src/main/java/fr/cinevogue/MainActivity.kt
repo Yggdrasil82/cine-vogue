@@ -42,6 +42,11 @@ import fr.cinevogue.ui.AiUi
 import fr.cinevogue.ui.ParentSettingsScreen
 import fr.cinevogue.ui.PinScreen
 import kotlinx.coroutines.launch
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import fr.cinevogue.ui.ShareKeyScreen
+import fr.cinevogue.ui.keyFromQr
 import fr.cinevogue.data.FILMS
 import fr.cinevogue.data.Game
 import fr.cinevogue.data.Question
@@ -139,6 +144,7 @@ private sealed interface Route {
     data class AiResult(val genreId: String, val review: AiReview, val objectivesDone: Int, val best: Int) : Route
     data class Pin(val change: Boolean = false) : Route
     data object Parent : Route
+    data object ShareKey : Route
 }
 
 private fun today(): Long = LocalDate.now().toEpochDay()
@@ -195,7 +201,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
 
     // Sans profil choisi, seuls le choix et la création sont possibles.
     val r = route
-    if (current == null && r !is Route.Picker && r !is Route.Form && r !is Route.Pin && r !is Route.Parent) {
+    if (current == null && r !is Route.Picker && r !is Route.Form && r !is Route.Pin && r !is Route.Parent && r !is Route.ShareKey) {
         LaunchedEffect(r) { route = if (profiles.isEmpty()) Route.Form(null) else Route.Picker }
         return
     }
@@ -565,9 +571,41 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                     }
                 },
                 onDeleteKey = { repo.mistralKey = ""; aiKey = ""; testMessage = null },
+                onShareKey = { route = Route.ShareKey },
+                onScanKey = {
+                    try {
+                        GmsBarcodeScanning.getClient(
+                            context,
+                            GmsBarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build(),
+                        ).startScan()
+                            .addOnSuccessListener { code ->
+                                val k = keyFromQr(code.rawValue)
+                                if (k != null) {
+                                    repo.mistralKey = k
+                                    aiKey = repo.mistralKey
+                                    testMessage = "✓ Clé importée. Touche « Tester la clé » pour vérifier."
+                                } else {
+                                    testMessage = "Ce QR code n'est pas une clé Ciné Vogue."
+                                }
+                            }
+                            .addOnFailureListener { testMessage = "Le scan n'a pas fonctionné. Vérifie que les services Google Play sont à jour." }
+                    } catch (e: Exception) {
+                        testMessage = "Le scan n'est pas disponible sur ce téléphone."
+                    }
+                },
                 onChangePin = { pinError = null; route = Route.Pin(change = true) },
                 onBack = back,
             )
+        }
+
+        is Route.ShareKey -> {
+            val back = { route = Route.Parent }
+            BackHandler { back() }
+            if (aiKey.isBlank()) {
+                LaunchedEffect(r) { route = Route.Parent }
+            } else {
+                ShareKeyScreen(aiKey, onBack = back)
+            }
         }
 
         is Route.EvalResult -> {

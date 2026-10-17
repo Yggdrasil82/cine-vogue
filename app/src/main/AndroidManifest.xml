@@ -25,6 +25,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.CineVogue">
 
+        <!-- Télécharge le module de scan de QR code des services Google à l'installation. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode_ui" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

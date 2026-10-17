@@ -32,6 +32,7 @@ import fr.cinevogue.ui.AiResultScreen
 import fr.cinevogue.ui.AiUi
 import fr.cinevogue.ui.AppFrame
 import fr.cinevogue.ui.ParentSettingsScreen
+import fr.cinevogue.ui.ShareKeyScreen
 import fr.cinevogue.ui.CineTheme
 import fr.cinevogue.ui.Cv
 import fr.cinevogue.ui.EvalResultScreen
@@ -317,7 +318,10 @@ class CapturesTest {
     fun z_reglages_parent() = shot {
         ParentSettingsScreen(
             hasKey = true, model = "", testMessage = "✓ La clé fonctionne.", testing = false,
-            onSaveKey = {}, onSaveModel = {}, onTest = {}, onDeleteKey = {}, onChangePin = {}, onBack = {},
+            onSaveKey = {}, onSaveModel = {}, onTest = {}, onDeleteKey = {}, onShareKey = {}, onScanKey = {}, onChangePin = {}, onBack = {},
         )
     }
+
+    @Test
+    fun zz_partager_cle() = shot { ShareKeyScreen("exemple-de-cle-fictive-0123456789", onBack = {}) }
 }

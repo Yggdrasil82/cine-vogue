@@ -27,7 +27,7 @@ Lancement manuel du workflow « Ciné Vogue » :
 
 ## Versions
 
-- **1.2** : scènes improvisées avec l'IA (Mistral), personnage animé, réglages parent
+- **1.2** : scènes improvisées avec l'IA (Mistral), personnage animé, réglages parent, partage de la clé par QR code
 - **1.1** : profils, niveau avancé B1+ → C1, corrections détaillées, choix de la voix,
   19 films au choix (2 scènes chacun), Mes répliques, évaluation de fin de thème
 - **1.0** : première version

@@ -45,6 +45,9 @@ private fun parentFieldColors() = OutlinedTextFieldDefaults.colors(
 )
 
 @Composable
+fun ParentHeaderPublic(title: String, onBack: () -> Unit) = ParentHeader(title, onBack)
+
+@Composable
 private fun ParentHeader(title: String, onBack: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().background(Cv.Header).padding(start = 8.dp, end = 22.dp, top = 14.dp, bottom = 14.dp),
@@ -112,6 +115,8 @@ fun ParentSettingsScreen(
     onSaveModel: (String) -> Unit,
     onTest: () -> Unit,
     onDeleteKey: () -> Unit,
+    onShareKey: () -> Unit,
+    onScanKey: () -> Unit,
     onChangePin: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -144,6 +149,14 @@ fun ParentSettingsScreen(
                     }
                 }
                 testMessage?.let { Text(it, fontSize = 14.sp, color = if (it.startsWith("✓")) Cv.Good else Cv.Bad) }
+            }
+            Card {
+                Text("Partager entre téléphones", fontWeight = FontWeight.Bold)
+                Text("Pas besoin de recopier la clé : affiche-la en QR code sur un téléphone et scanne-la avec l'autre.", fontSize = 13.sp, color = Cv.Muted, lineHeight = 19.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LineButton("Partager la clé", onClick = onShareKey, enabled = hasKey, color = Cv.Gold, border = Cv.Gold, modifier = Modifier.weight(1f))
+                    LineButton("Scanner une clé", onClick = onScanKey, color = Cv.Gold, border = Cv.Gold, modifier = Modifier.weight(1f))
+                }
             }
             Card {
                 Text("Confidentialité", fontWeight = FontWeight.Bold)
