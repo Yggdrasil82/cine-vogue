@@ -183,6 +183,26 @@ object Studio {
         return main + retakes + clap
     }
 
+    /** Nombre de questions de l'avant-première. */
+    const val EVAL_SIZE = 12
+
+    /**
+     * L'avant-première d'un thème : pour chaque scène, un script troué (grammaire),
+     * un doublage et une écoute ou un mot, soit 12 questions mélangées.
+     */
+    fun evaluation(genre: Genre, rnd: Random): List<Question> =
+        genre.scenes.flatMapIndexed { i, s ->
+            val c = candidates(genre, s, rnd)
+            listOfNotNull(
+                c.filter { it.game == Game.SCRIPT }.randomOrNull(rnd),
+                c.filter { it.game == Game.DOUBLAGE }.randomOrNull(rnd),
+                if (i % 2 == 0) c.firstOrNull { it.game == Game.CASTING } else c.filter { it.game == Game.CLAP }.randomOrNull(rnd),
+            )
+        }.shuffled(rnd).take(EVAL_SIZE)
+
+    /** La règle de la scène d'où vient une question. */
+    fun tipOf(q: Question): Tip? = find(q.id.substringBeforeLast('-'))?.second?.tip
+
     /** Révision de « Mes répliques » : jusqu'à 8 questions, doublage et casting mélangés. */
     fun mySession(myLines: List<MyLine>, pool: List<Genre>, rnd: Random): List<Question> =
         myLines.flatMap { line -> listOf("d", "k").map { myQuestion(line, it, myLines, pool, rnd) } }

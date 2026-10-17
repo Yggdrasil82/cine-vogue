@@ -17,6 +17,8 @@ data class Progress(
     val missed: Set<String> = emptySet(),
     val perfectCount: Int = 0,
     val myLines: List<MyLine> = emptyList(),
+    /** Meilleure note sur 20 à l'avant-première de chaque thème. */
+    val evalBest: Map<String, Int> = emptyMap(),
 )
 
 /** Un fichier de sauvegarde par profil. Le premier profil reprend le fichier de la v1.0. */
@@ -32,6 +34,7 @@ class ProgressStore(context: Context, prefsName: String) {
         missed = (prefs.getStringSet("missed", emptySet()) ?: emptySet()).toSet(),
         perfectCount = prefs.getInt("perfect", 0),
         myLines = decodeLines(prefs.getString("mylines", null)),
+        evalBest = decode(prefs.getString("evals", "") ?: ""),
     )
 
     fun save(p: Progress) {
@@ -44,6 +47,7 @@ class ProgressStore(context: Context, prefsName: String) {
             .putStringSet("missed", p.missed.toSet())
             .putInt("perfect", p.perfectCount)
             .putString("mylines", encodeLines(p.myLines))
+            .putString("evals", p.evalBest.entries.joinToString(",") { "${it.key}:${it.value}" })
             .apply()
     }
 

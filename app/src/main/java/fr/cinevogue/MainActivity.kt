@@ -25,6 +25,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import fr.cinevogue.data.FILMS
 import fr.cinevogue.data.Game
+import fr.cinevogue.data.Question
+import fr.cinevogue.data.finishEval
+import fr.cinevogue.data.genreDone
+import fr.cinevogue.data.score20
 import fr.cinevogue.data.MyLine
 import fr.cinevogue.data.Tip
 import fr.cinevogue.data.Word
@@ -48,7 +52,10 @@ import fr.cinevogue.ui.AppFrame
 import fr.cinevogue.ui.CineTheme
 import fr.cinevogue.ui.Cv
 import fr.cinevogue.ui.GenreScreen
+import fr.cinevogue.ui.EvalResultScreen
+import fr.cinevogue.ui.EvalUi
 import fr.cinevogue.ui.HomeScreen
+import fr.cinevogue.ui.Mistake
 import fr.cinevogue.ui.MyLineFormScreen
 import fr.cinevogue.ui.MyLinesScreen
 import fr.cinevogue.ui.PickerScreen
@@ -106,6 +113,8 @@ private sealed interface Route {
     data class Result(val ui: ResultUi, val nextSceneId: String?) : Route
     data object Voices : Route
     data object LineForm : Route
+    data class Eval(val genreId: String) : Route
+    data class EvalResult(val ui: EvalUi, val genreId: String, val nextGenreId: String?) : Route
 }
 
 private fun today(): Long = LocalDate.now().toEpochDay()
@@ -216,6 +225,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                         onGenre = { route = Route.GenreRoute(it) },
                         onSwitch = { route = Route.Picker },
                         onEditFilms = { route = Route.Form(prof.id) },
+                        onEval = { route = Route.Eval(it) },
                     )
                     Tab.REPLIQUES -> MyLinesScreen(
                         lines = progress.myLines,
@@ -292,7 +302,13 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                 LaunchedEffect(r) { route = Route.Main(Tab.PLATEAU) }
             } else {
                 BackHandler { route = Route.Main(Tab.PLATEAU) }
-                GenreScreen(genre, progress, onPlay = { route = Route.Play(it) }, onBack = { route = Route.Main(Tab.PLATEAU) })
+                GenreScreen(
+                    genre, progress,
+                    onPlay = { route = Route.Play(it) },
+                    onBack = { route = Route.Main(Tab.PLATEAU) },
+                    withEval = genresFor(prof.level).any { it.id == genre.id },
+                    onEval = { route = Route.Eval(genre.id) },
+                )
             }
         }
 
@@ -335,7 +351,8 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                         profile = prof,
                         narrator = narrator,
                         onQuit = { route = Route.Main(Tab.REPLIQUES) },
-                        onFinish = { correct, wrong ->
+                        onFinish = { answers ->
+                            val (correct, wrong) = split(answers)
                             finish(
                                 Studio.MY_SCENE, "Mes répliques", correct, wrong,
                                 progress.myLines.takeLast(4).map { Word(it.en, it.fr) },
@@ -358,7 +375,8 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                         profile = prof,
                         narrator = narrator,
                         onQuit = { route = Route.Main(Tab.PLATEAU) },
-                        onFinish = { correct, wrong ->
+                        onFinish = { answers ->
+                            val (correct, wrong) = split(answers)
                             val isFilm = FILMS.any { it.second.id == genre.id }
                             finish(scene.id, scene.title, correct, wrong, scene.words, scene.tip) { updated ->
                                 if (isFilm) {
@@ -372,6 +390,70 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                     )
                 }
             }
+        }
+
+        is Route.Eval -> {
+            val prof = current!!
+            val genres = genresFor(prof.level)
+            val genre = genres.firstOrNull { it.id == r.genreId }
+            if (genre == null || !genreDone(genre, progress)) {
+                LaunchedEffect(r) { route = Route.Main(Tab.PLATEAU) }
+            } else {
+                SceneHost(
+                    key = "eval-" + genre.id + "-" + System.identityHashCode(r),
+                    build = { rnd -> Studio.evaluation(genre, rnd) },
+                    header = "Avant-première",
+                    subtitle = genre.title,
+                    profile = prof,
+                    narrator = narrator,
+                    exam = true,
+                    onQuit = { route = Route.GenreRoute(genre.id) },
+                    onFinish = { answers ->
+                        val (correct, wrong) = split(answers)
+                        val before = rankFor(progress.points)
+                        val updated = finishEval(progress, genre.id, correct, wrong, today())
+                        saveProgress(updated)
+                        val after = rankFor(updated.points)
+                        val wrongTips = answers.filter { (q, sel) -> sel != q.answer }.mapNotNull { Studio.tipOf(it.first) }.distinct()
+                        val allTips = answers.mapNotNull { Studio.tipOf(it.first) }.distinct()
+                        val idx = genres.indexOf(genre)
+                        val next = genres.getOrNull(idx + 1)
+                        route = Route.EvalResult(
+                            EvalUi(
+                                genreTitle = genre.title,
+                                score = score20(correct.size, answers.size),
+                                correct = correct.size,
+                                total = answers.size,
+                                best = updated.evalBest[genre.id] ?: 0,
+                                nextTitle = next?.title,
+                                mastered = (allTips - wrongTips.toSet()).map { it.title },
+                                toReview = wrongTips,
+                                mistakes = answers.filter { (q, sel) -> sel != q.answer }.map { (q, sel) ->
+                                    Mistake(
+                                        prompt = if (q.game == Game.CLAP) "Que veut dire « ${q.text} » ?" else "« ${q.text} »",
+                                        yours = sel?.let { q.options[it] } ?: "pas de réponse",
+                                        right = q.options[q.answer],
+                                        explain = q.why ?: q.translation,
+                                    )
+                                },
+                                newRank = if (after != before) after.title(prof.gender) else null,
+                            ),
+                            genre.id,
+                            next?.id,
+                        )
+                    },
+                )
+            }
+        }
+
+        is Route.EvalResult -> {
+            BackHandler { route = Route.Main(Tab.PLATEAU) }
+            EvalResultScreen(
+                r.ui,
+                onNext = r.nextGenreId?.let { id -> { route = Route.GenreRoute(id) } },
+                onRetry = { route = Route.Eval(r.genreId) },
+                onHome = { route = Route.Main(Tab.PLATEAU) },
+            )
         }
 
         is Route.Result -> {
@@ -388,6 +470,11 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
 private fun sampleLine(p: Profile): String =
     "Hello ${p.name}! Welcome to Ciné Vogue. Are you ready for your next scene?"
 
+/** Sépare les identifiants des questions réussies et ratées. */
+private fun split(answers: List<Pair<Question, Int?>>): Pair<List<String>, List<String>> =
+    answers.filter { it.second == it.first.answer }.map { it.first.id } to
+        answers.filter { it.second != it.first.answer }.map { it.first.id }
+
 private val MY_TIP = Tip(
     "Ton carnet de répliques",
     "Regarder un film en VO avec les sous-titres anglais, c'est le meilleur entraînement. Note les répliques qui te plaisent : elles reviendront en « Prise 2 » dans tes scènes.",
@@ -396,13 +483,14 @@ private val MY_TIP = Tip(
 @Composable
 private fun SceneHost(
     key: String,
-    build: (Random) -> List<fr.cinevogue.data.Question>,
+    build: (Random) -> List<Question>,
     header: String,
     subtitle: String,
     profile: Profile,
     narrator: Narrator,
+    exam: Boolean = false,
     onQuit: () -> Unit,
-    onFinish: (List<String>, List<String>) -> Unit,
+    onFinish: (List<Pair<Question, Int?>>) -> Unit,
 ) {
     val questions = remember(key) { build(Random(System.nanoTime())) }
     var index by remember(key) { mutableIntStateOf(0) }
@@ -410,8 +498,7 @@ private fun SceneHost(
     var checked by remember(key) { mutableStateOf(false) }
     var eliminated by remember(key) { mutableStateOf(setOf<Int>()) }
     var seconds by remember(key) { mutableIntStateOf(10) }
-    val correct = remember(key) { mutableStateListOf<String>() }
-    val wrong = remember(key) { mutableStateListOf<String>() }
+    val answers = remember(key) { mutableStateListOf<Pair<Question, Int?>>() }
 
     val q = questions[index]
     val say = { text: String, slow: Boolean -> narrator.speak(text, slow, profile.voice) }
@@ -419,7 +506,18 @@ private fun SceneHost(
     fun check() {
         if (checked) return
         checked = true
-        if (selected == q.answer) correct.add(q.id) else wrong.add(q.id)
+        answers.add(q to selected)
+    }
+
+    fun next() {
+        if (index + 1 < questions.size) {
+            index += 1
+            selected = null
+            checked = false
+            eliminated = emptySet()
+        } else {
+            onFinish(answers.toList())
+        }
     }
 
     BackHandler { onQuit() }
@@ -430,7 +528,9 @@ private fun SceneHost(
             delay(500)
             q.audio?.let { say(it, false) }
         }
-        if (q.game == Game.CLAP) {
+        if (q.game == Game.CLAP && exam) {
+            q.audio?.let { say(it, false) }
+        } else if (q.game == Game.CLAP) {
             q.audio?.let { say(it, false) }
             while (seconds > 0 && !checked) {
                 delay(1000)
@@ -448,22 +548,24 @@ private fun SceneHost(
             selected = selected,
             checked = checked,
             eliminated = eliminated,
-            secondsLeft = if (q.game == Game.CLAP) seconds else null,
+            secondsLeft = if (q.game == Game.CLAP && !exam) seconds else null,
             header = header,
             genreTitle = subtitle,
             feminine = profile.gender == Gender.FILLE,
+            exam = exam,
         ),
         onSelect = { if (!checked && it !in eliminated) selected = it },
         onAction = {
-            if (!checked) {
+            if (exam) {
+                // Avant-première : on enregistre et on passe à la suite, sans correction.
+                if (selected != null) {
+                    answers.add(q to selected)
+                    next()
+                }
+            } else if (!checked) {
                 if (selected != null) check()
-            } else if (index + 1 < questions.size) {
-                index += 1
-                selected = null
-                checked = false
-                eliminated = emptySet()
             } else {
-                onFinish(correct.toList(), wrong.toList())
+                next()
             }
         },
         onHint = {

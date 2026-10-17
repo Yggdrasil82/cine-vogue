@@ -59,6 +59,8 @@ data class QuestionUi(
     val header: String,
     val genreTitle: String,
     val feminine: Boolean = true,
+    /** Avant-première : pas d'indice, pas de correction avant la fin. */
+    val exam: Boolean = false,
 )
 
 private val PRAISES_F = listOf("Bien joué !", "Parfait !", "Une vraie pro !", "Magnifique !", "Dans la boîte !", "Superbe prise !")
@@ -133,14 +135,18 @@ fun SceneScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            LineButton(
-                "Indice",
-                onClick = onHint,
-                enabled = !ui.checked && ui.eliminated.isEmpty(),
-                modifier = Modifier.height(56.dp),
-            )
+            if (!ui.exam) {
+                LineButton(
+                    "Indice",
+                    onClick = onHint,
+                    enabled = !ui.checked && ui.eliminated.isEmpty(),
+                    modifier = Modifier.height(56.dp),
+                )
+            }
             GoldButton(
                 when {
+                    ui.exam && ui.number == ui.total -> "Terminer"
+                    ui.exam -> "Valider"
                     !ui.checked -> "Action !"
                     ui.number == ui.total -> "Coupez !"
                     else -> "Suivant"

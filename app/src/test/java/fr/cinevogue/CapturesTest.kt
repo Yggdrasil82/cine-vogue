@@ -25,7 +25,11 @@ import fr.cinevogue.data.Studio
 import fr.cinevogue.ui.AppFrame
 import fr.cinevogue.ui.CineTheme
 import fr.cinevogue.ui.Cv
+import fr.cinevogue.ui.EvalResultScreen
+import fr.cinevogue.ui.EvalUi
+import fr.cinevogue.ui.GenreScreen
 import fr.cinevogue.ui.HomeScreen
+import fr.cinevogue.ui.Mistake
 import fr.cinevogue.ui.MyLineFormScreen
 import fr.cinevogue.ui.MyLinesScreen
 import fr.cinevogue.ui.PickerScreen
@@ -201,5 +205,48 @@ class CapturesTest {
     fun q_prise2_ta_replique() = shot {
         val q = Studio.mySession(lines, BEGINNER, Random(3)).first { it.game == Game.DOUBLAGE }.copy(retake = true)
         SceneScreen(QuestionUi(q, 6, 8, q.answer, true, emptySet(), null, "Scène 2", "Harry Potter", true), {}, {}, {}, {}, {})
+    }
+
+    private val g1Done = sample.copy(sceneStars = mapOf("g1s1" to 3, "g1s2" to 2, "g1s3" to 2, "g1s4" to 3))
+
+    @Test
+    fun r_theme_avant_premiere() = shot {
+        GenreScreen(BEGINNER[0], g1Done, {}, {}, withEval = true, onEval = {})
+    }
+
+    @Test
+    fun s_avant_premiere_question() = shot {
+        val q = Studio.evaluation(BEGINNER[0], Random(5)).first { it.game == Game.SCRIPT }
+        SceneScreen(QuestionUi(q, 4, 12, q.options.indices.first { it != q.answer }, false, emptySet(), null, "Avant-première", BEGINNER[0].title, true, exam = true), {}, {}, {}, {}, {})
+    }
+
+    @Test
+    fun t_bilan_reussi() = shot {
+        val g = BEGINNER[0]
+        EvalResultScreen(
+            EvalUi(
+                genreTitle = g.title, score = 15, correct = 9, total = 12, best = 15, nextTitle = BEGINNER[1].title,
+                mastered = listOf(g.scenes[0].tip.title, g.scenes[2].tip.title, g.scenes[3].tip.title),
+                toReview = listOf(g.scenes[1].tip),
+                mistakes = listOf(Mistake("« Have you got _____ brothers or sisters? »", "some", "any", g.scenes[1].lines[1].why ?: "")),
+                newRank = null,
+            ),
+            onNext = {}, onRetry = {}, onHome = {},
+        )
+    }
+
+    @Test
+    fun u_bilan_a_retenter() = shot {
+        val g = ADVANCED[1]
+        EvalResultScreen(
+            EvalUi(
+                genreTitle = g.title, score = 8, correct = 5, total = 12, best = 8, nextTitle = ADVANCED[2].title,
+                mastered = listOf(g.scenes[3].tip.title),
+                toReview = listOf(g.scenes[0].tip, g.scenes[2].tip),
+                mistakes = listOf(Mistake("« So the thief _____ have come through the garden. »", "mustn't", "can't", g.scenes[0].lines[1].why ?: "")),
+                newRank = null,
+            ),
+            onNext = {}, onRetry = {}, onHome = {},
+        )
     }
 }

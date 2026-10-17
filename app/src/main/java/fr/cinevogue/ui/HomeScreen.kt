@@ -34,7 +34,11 @@ import androidx.compose.ui.unit.sp
 import fr.cinevogue.data.Genre
 import fr.cinevogue.data.Profile
 import fr.cinevogue.data.Progress
+import fr.cinevogue.data.EVAL_OSCAR
+import fr.cinevogue.data.EVAL_PASS
 import fr.cinevogue.data.currentStreak
+import fr.cinevogue.data.genreDone
+import fr.cinevogue.data.pendingEval
 import fr.cinevogue.data.genreUnlocked
 import fr.cinevogue.data.nextRank
 import fr.cinevogue.data.nextToPlay
@@ -53,11 +57,14 @@ fun HomeScreen(
     onGenre: (String) -> Unit,
     onSwitch: () -> Unit,
     onEditFilms: () -> Unit,
+    onEval: (String) -> Unit = {},
 ) {
     val rank = rankFor(p.points)
     val next = nextRank(p.points)
     val streak = currentStreak(p, today)
     val up = nextToPlay(genres, p)
+    val pending = pendingEval(genres, p)
+    val evalFirst = pending != null && genres.indexOf(pending) < (up?.let { genres.indexOf(it.first) } ?: Int.MAX_VALUE)
 
     Column(Modifier.fillMaxSize()) {
         Column(
@@ -140,14 +147,22 @@ fun HomeScreen(
                     unlocked = genreUnlocked(genres, i, p),
                     current = up?.first == g,
                     done = scenesDone(g, p),
-                    lockHint = if (i > 0) "Termine « ${genres[i - 1].title} » pour débloquer" else "",
+                    lockHint = if (i > 0) "Réussis l'avant-première de « ${genres[i - 1].title} » ($EVAL_PASS/20)" else "",
+                    evalScore = p.evalBest[g.id],
                     onClick = { onGenre(g.id) },
                 )
             }
         }
 
         Box(Modifier.padding(horizontal = 22.dp, vertical = 14.dp)) {
-            if (up != null) {
+            if (evalFirst && pending != null) {
+                GoldButton(
+                    "Avant-première : ${pending.title}",
+                    onClick = { onEval(pending.id) },
+                    modifier = Modifier.fillMaxWidth().height(60.dp),
+                    fontSize = 22,
+                )
+            } else if (up != null) {
                 GoldButton(
                     "Tourner : ${up.second.title}",
                     onClick = { onPlay(up.second.id) },
@@ -189,6 +204,7 @@ private fun GenreCard(
     current: Boolean,
     done: Int,
     lockHint: String,
+    evalScore: Int?,
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(16.dp)
@@ -211,7 +227,9 @@ private fun GenreCard(
             )
             when {
                 !unlocked -> Icon(Icons.Filled.Lock, contentDescription = "Verrouillé", tint = Cv.Dim)
-                done == genre.scenes.size -> Pill("TERMINÉ", background = Cv.Track, color = Cv.Gold)
+                (evalScore ?: 0) >= EVAL_OSCAR -> Pill("OSCAR ★")
+                (evalScore ?: 0) >= EVAL_PASS -> Pill("VALIDÉ $evalScore/20", background = Cv.Track, color = Cv.Gold)
+                done == genre.scenes.size -> Pill("AVANT-PREMIÈRE")
                 current -> Pill("EN TOURNAGE")
             }
         }
@@ -226,7 +244,14 @@ private fun GenreCard(
 }
 
 @Composable
-fun GenreScreen(genre: Genre, p: Progress, onPlay: (String) -> Unit, onBack: () -> Unit) {
+fun GenreScreen(
+    genre: Genre,
+    p: Progress,
+    onPlay: (String) -> Unit,
+    onBack: () -> Unit,
+    withEval: Boolean = false,
+    onEval: () -> Unit = {},
+) {
     Column(Modifier.fillMaxSize().background(Cv.Bg)) {
         Column(
             Modifier
@@ -281,6 +306,47 @@ fun GenreScreen(genre: Genre, p: Progress, onPlay: (String) -> Unit, onBack: () 
                     }
                 }
             }
+            if (withEval) EvalCard(genre, p, onEval)
+        }
+    }
+}
+
+/** La carte de l'avant-première, en bas de la page d'un grand thème. */
+@Composable
+private fun EvalCard(genre: Genre, p: Progress, onEval: () -> Unit) {
+    val ready = genreDone(genre, p)
+    val best = p.evalBest[genre.id]
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (ready) Cv.Header else Cv.Locked)
+            .border(2.dp, if (ready) Cv.Gold else Cv.Line, shape)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text("AVANT-PREMIÈRE", fontFamily = Bebas, fontSize = 22.sp, letterSpacing = 2.sp, color = if (ready) Cv.Gold else Cv.Dim)
+        Text(
+            "L'évaluation du thème : 12 questions, sans indice, correction à la fin. Il faut $EVAL_PASS/20 pour débloquer la suite, et $EVAL_OSCAR/20 pour l'Oscar.",
+            fontSize = 14.sp, lineHeight = 20.sp, color = if (ready) Cv.Cream else Cv.Dim,
+        )
+        when {
+            !ready -> Text("Termine les ${genre.scenes.size} scènes pour la débloquer.", fontSize = 13.sp, color = Cv.Dim)
+            best != null -> Text(
+                "Meilleure note : $best/20" + when {
+                    best >= EVAL_OSCAR -> " · Oscar obtenu ★"
+                    best >= EVAL_PASS -> " · thème validé"
+                    else -> " · pas encore validé"
+                },
+                fontSize = 14.sp, fontWeight = FontWeight.Bold, color = if (best >= EVAL_PASS) Cv.Gold else Cv.Bad,
+            )
+        }
+        if (ready) {
+            GoldButton(
+                if (best == null) "Passer l'avant-première" else "Repasser l'avant-première",
+                onClick = onEval, fontSize = 20, modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
