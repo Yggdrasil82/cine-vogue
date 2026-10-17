@@ -21,9 +21,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import fr.cinevogue.data.GENRES
+import fr.cinevogue.data.Gender
+import fr.cinevogue.data.Genre
+import fr.cinevogue.data.Profile
 import fr.cinevogue.data.Progress
 import fr.cinevogue.data.RANKS
+import fr.cinevogue.data.Settings
 import fr.cinevogue.data.currentStreak
 import fr.cinevogue.data.rankFor
 import fr.cinevogue.data.scenesDone
@@ -37,7 +40,7 @@ private fun ScreenTitle(text: String) {
 }
 
 @Composable
-fun TrophiesScreen(p: Progress) {
+fun TrophiesScreen(genres: List<Genre>, p: Progress, gender: Gender) {
     val rank = rankFor(p.points)
     Column(
         Modifier
@@ -61,7 +64,7 @@ fun TrophiesScreen(p: Progress) {
             ) {
                 StarMark(filled = reached, dp = 24.dp, color = if (reached) Cv.Gold else Cv.Dim)
                 Text(
-                    r.title,
+                    r.title(gender),
                     fontWeight = FontWeight.Bold,
                     color = if (reached) Cv.Cream else Cv.Dim,
                     modifier = Modifier.weight(1f),
@@ -71,7 +74,7 @@ fun TrophiesScreen(p: Progress) {
         }
 
         SectionTitle("Récompenses", 24)
-        trophies(p).forEach { t ->
+        trophies(genres, p, gender).forEach { t ->
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -93,15 +96,22 @@ fun TrophiesScreen(p: Progress) {
 
 @Composable
 fun ProfileScreen(
+    profile: Profile,
+    genres: List<Genre>,
     p: Progress,
+    settings: Settings,
     today: Long,
+    voiceLabel: String,
     voiceOk: Boolean,
+    onEdit: () -> Unit,
+    onSwitch: () -> Unit,
     onReminder: (Boolean) -> Unit,
     onPickTime: () -> Unit,
+    onChooseVoice: () -> Unit,
     onTestVoice: () -> Unit,
 ) {
-    val totalScenes = GENRES.sumOf { it.scenes.size }
-    val done = GENRES.sumOf { scenesDone(it, p) }
+    val totalScenes = genres.sumOf { it.scenes.size }
+    val done = genres.sumOf { scenesDone(it, p) }
     Column(
         Modifier
             .fillMaxSize()
@@ -110,6 +120,19 @@ fun ProfileScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ScreenTitle("PROFIL")
+        Card {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                ProfileAvatar(profile.name, profile.color, dp = 56.dp)
+                Column(Modifier.weight(1f)) {
+                    Text(profile.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    Text("${rankFor(p.points).title(profile.gender)} · ${profile.level.label}", fontSize = 14.sp, color = Cv.Muted)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                LineButton("Modifier", onClick = onEdit, color = Cv.Gold, border = Cv.Gold, modifier = Modifier.weight(1f))
+                LineButton("Changer de profil", onClick = onSwitch, modifier = Modifier.weight(1f))
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Stat("${p.points} ★", "étoiles gagnées", Modifier.weight(1f))
             Stat("$done / $totalScenes", "scènes tournées", Modifier.weight(1f))
@@ -124,15 +147,30 @@ fun ProfileScreen(
             fontSize = 14.sp, color = Cv.Muted,
         )
 
+        SectionTitle("Ta voix", 24)
+        Card {
+            Text(voiceLabel, fontWeight = FontWeight.Bold)
+            if (!voiceOk) {
+                Text(
+                    "Voix anglaise introuvable : installe-la avec « Choisir une voix » › « Installer d'autres voix ».",
+                    fontSize = 13.sp, color = Cv.Bad,
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GoldButton("Choisir une voix", onClick = onChooseVoice, fontSize = 18, modifier = Modifier.weight(1f))
+                LineButton("Tester", onClick = onTestVoice, color = Cv.Gold, border = Cv.Gold, modifier = Modifier.weight(0.6f))
+            }
+        }
+
         SectionTitle("Rappel quotidien", 24)
         Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Ton tournage t'attend !", fontWeight = FontWeight.Bold)
-                    Text("Une notification chaque jour si tu n'as pas encore joué", fontSize = 13.sp, color = Cv.Muted)
+                    Text("Le tournage t'attend !", fontWeight = FontWeight.Bold)
+                    Text("Commun à tous les profils : prévient ceux qui n'ont pas encore joué", fontSize = 13.sp, color = Cv.Muted)
                 }
                 Switch(
-                    checked = p.reminderOn,
+                    checked = settings.reminderOn,
                     onCheckedChange = onReminder,
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Cv.Bg,
@@ -143,23 +181,12 @@ fun ProfileScreen(
                     ),
                 )
             }
-            if (p.reminderOn) {
+            if (settings.reminderOn) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Heure du rappel", modifier = Modifier.weight(1f))
-                    LineButton(formatTime(p.reminderHour, p.reminderMinute), onClick = onPickTime, color = Cv.Gold, border = Cv.Gold)
+                    LineButton(formatTime(settings.reminderHour, settings.reminderMinute), onClick = onPickTime, color = Cv.Gold, border = Cv.Gold)
                 }
             }
-        }
-
-        SectionTitle("La voix", 24)
-        Card {
-            Text("Voix anglaise, accent britannique", fontWeight = FontWeight.Bold)
-            Text(
-                if (voiceOk) "Elle fonctionne sans internet."
-                else "Voix anglaise introuvable : installe-la dans Paramètres › Synthèse vocale (Google), langue anglais (Royaume-Uni).",
-                fontSize = 13.sp, color = if (voiceOk) Cv.Muted else Cv.Bad,
-            )
-            GoldButton("Tester la voix", onClick = onTestVoice, fontSize = 20, modifier = Modifier.fillMaxWidth())
         }
     }
 }
@@ -178,7 +205,7 @@ private fun Stat(value: String, label: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Card(content: @Composable () -> Unit) {
+fun Card(content: @Composable () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()

@@ -31,8 +31,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import fr.cinevogue.data.GENRES
 import fr.cinevogue.data.Genre
+import fr.cinevogue.data.Profile
 import fr.cinevogue.data.Progress
 import fr.cinevogue.data.currentStreak
 import fr.cinevogue.data.genreUnlocked
@@ -43,11 +43,19 @@ import fr.cinevogue.data.sceneUnlocked
 import fr.cinevogue.data.scenesDone
 
 @Composable
-fun HomeScreen(p: Progress, today: Long, onPlay: (String) -> Unit, onGenre: (String) -> Unit) {
+fun HomeScreen(
+    profile: Profile,
+    genres: List<Genre>,
+    p: Progress,
+    today: Long,
+    onPlay: (String) -> Unit,
+    onGenre: (String) -> Unit,
+    onSwitch: () -> Unit,
+) {
     val rank = rankFor(p.points)
     val next = nextRank(p.points)
     val streak = currentStreak(p, today)
-    val up = nextToPlay(p)
+    val up = nextToPlay(genres, p)
 
     Column(Modifier.fillMaxSize()) {
         Column(
@@ -64,17 +72,22 @@ fun HomeScreen(p: Progress, today: Long, onPlay: (String) -> Unit, onGenre: (Str
                     modifier = Modifier.weight(1f),
                 )
                 Pill(if (streak > 1) "Série : $streak jours" else "Série : $streak jour", background = Cv.Bg, color = Cv.Cream)
+                Spacer(Modifier.width(10.dp))
+                ProfileAvatar(
+                    profile.name, profile.color, dp = 40.dp,
+                    modifier = Modifier.clickable(onClickLabel = "Changer de profil", onClick = onSwitch),
+                )
             }
             Row {
-                Text("Ton rang : ", fontSize = 14.sp)
-                Text(rank.title, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Cv.Gold)
+                Text("${profile.name}, ton rang : ", fontSize = 14.sp)
+                Text(rank.title(profile.gender), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Cv.Gold)
                 Spacer(Modifier.weight(1f))
                 Text(if (next != null) "${p.points} / ${next.min} ★" else "${p.points} ★", fontSize = 14.sp)
             }
             val fraction = if (next == null) 1f else (p.points - rank.min).toFloat() / (next.min - rank.min)
             ProgressBar(fraction)
             Text(
-                if (next != null) "Encore ${next.min - p.points} ★ pour devenir ${next.title}"
+                if (next != null) "Encore ${next.min - p.points} ★ pour devenir ${next.title(profile.gender)}"
                 else "Tu es une star ! Continue à tourner.",
                 fontSize = 13.sp, color = Cv.Muted,
             )
@@ -88,14 +101,17 @@ fun HomeScreen(p: Progress, today: Long, onPlay: (String) -> Unit, onGenre: (Str
                 .padding(horizontal = 22.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SectionTitle("À l'affiche")
-            GENRES.forEachIndexed { i, g ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.weight(1f)) { SectionTitle("À l'affiche") }
+                Pill(profile.level.label.uppercase(), background = Cv.Card, color = Cv.Gold)
+            }
+            genres.forEachIndexed { i, g ->
                 GenreCard(
                     genre = g,
-                    unlocked = genreUnlocked(i, p),
+                    unlocked = genreUnlocked(genres, i, p),
                     current = up?.first == g,
                     done = scenesDone(g, p),
-                    lockHint = if (i > 0) "Termine « ${GENRES[i - 1].title} » pour débloquer" else "",
+                    lockHint = if (i > 0) "Termine « ${genres[i - 1].title} » pour débloquer" else "",
                     onClick = { onGenre(g.id) },
                 )
             }
@@ -111,7 +127,7 @@ fun HomeScreen(p: Progress, today: Long, onPlay: (String) -> Unit, onGenre: (Str
             } else {
                 GoldButton(
                     "Rejouer une scène",
-                    onClick = { onGenre(GENRES.first().id) },
+                    onClick = { onGenre(genres.first().id) },
                     modifier = Modifier.fillMaxWidth().height(60.dp),
                 )
             }

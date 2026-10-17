@@ -1,13 +1,15 @@
 package fr.cinevogue.data
 
-data class Rank(val title: String, val min: Int)
+data class Rank(val fille: String, val garcon: String, val min: Int) {
+    fun title(g: Gender) = if (g == Gender.GARCON) garcon else fille
+}
 
 val RANKS = listOf(
-    Rank("Figurante", 0),
-    Rank("Second rôle", 150),
-    Rank("Premier rôle", 350),
-    Rank("Vedette", 600),
-    Rank("Star d'Hollywood", 900),
+    Rank("Figurante", "Figurant", 0),
+    Rank("Second rôle", "Second rôle", 150),
+    Rank("Premier rôle", "Premier rôle", 350),
+    Rank("Vedette", "Vedette", 600),
+    Rank("Star d'Hollywood", "Star d'Hollywood", 900),
 )
 
 data class Trophy(val title: String, val description: String, val earned: Boolean)
@@ -26,15 +28,16 @@ fun scenesDone(g: Genre, p: Progress): Int = g.scenes.count { sceneDone(p, it.id
 
 fun genreDone(g: Genre, p: Progress): Boolean = scenesDone(g, p) == g.scenes.size
 
-fun genreUnlocked(index: Int, p: Progress): Boolean = index == 0 || genreDone(GENRES[index - 1], p)
+fun genreUnlocked(genres: List<Genre>, index: Int, p: Progress): Boolean =
+    index == 0 || genreDone(genres[index - 1], p)
 
 fun sceneUnlocked(g: Genre, sceneIndex: Int, p: Progress): Boolean =
     sceneIndex == 0 || sceneDone(p, g.scenes[sceneIndex - 1].id)
 
 /** La prochaine scène à tourner, ou null si tout est terminé. */
-fun nextToPlay(p: Progress): Pair<Genre, Scene>? {
-    GENRES.forEachIndexed { i, g ->
-        if (genreUnlocked(i, p)) {
+fun nextToPlay(genres: List<Genre>, p: Progress): Pair<Genre, Scene>? {
+    genres.forEachIndexed { i, g ->
+        if (genreUnlocked(genres, i, p)) {
             g.scenes.firstOrNull { !sceneDone(p, it.id) }?.let { return g to it }
         }
     }
@@ -67,17 +70,17 @@ fun finishScene(p: Progress, sceneId: String, correct: List<String>, wrong: List
     return updated to stars
 }
 
-fun trophies(p: Progress): List<Trophy> {
-    val total = GENRES.sumOf { scenesDone(it, p) }
-    val prizes = listOf("Prix de la comédie", "Prix du road movie", "Prix du café", "Prix du polar", "Prix de la science-fiction")
+fun trophies(genres: List<Genre>, p: Progress, gender: Gender): List<Trophy> {
+    val total = genres.sumOf { scenesDone(it, p) }
+    val top = RANKS.last()
     return listOf(
         Trophy("Premier clap", "Terminer ta première scène", total >= 1),
         Trophy("Sans faute", "Réussir une scène sans aucune erreur", p.perfectCount >= 1),
         Trophy("Série de 3 jours", "Tourner 3 jours de suite", p.bestStreak >= 3),
         Trophy("Une semaine de tournage", "Tourner 7 jours de suite", p.bestStreak >= 7),
-    ) + GENRES.mapIndexed { i, g ->
-        Trophy(prizes[i], "Terminer « ${g.title} »", genreDone(g, p))
+    ) + genres.map { g ->
+        Trophy("Prix : ${g.title}", "Terminer « ${g.title} »", genreDone(g, p))
     } + listOf(
-        Trophy("Star d'Hollywood", "Atteindre le plus haut rang", p.points >= RANKS.last().min),
+        Trophy(top.title(gender), "Atteindre le plus haut rang", p.points >= top.min),
     )
 }

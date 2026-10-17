@@ -1,6 +1,9 @@
 package fr.cinevogue.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -27,6 +30,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -39,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import fr.cinevogue.data.Game
 import fr.cinevogue.data.Question
+import kotlinx.coroutines.delay
 
 data class QuestionUi(
     val q: Question,
@@ -50,10 +56,13 @@ data class QuestionUi(
     val secondsLeft: Int?,
     val sceneNumber: Int,
     val genreTitle: String,
+    val feminine: Boolean = true,
 )
 
-private val PRAISES = listOf("Bien joué !", "Parfait !", "Une vraie pro !", "Magnifique !", "Dans la boîte !", "Superbe prise !")
+private val PRAISES_F = listOf("Bien joué !", "Parfait !", "Une vraie pro !", "Magnifique !", "Dans la boîte !", "Superbe prise !")
+private val PRAISES_M = listOf("Bien joué !", "Parfait !", "Un vrai pro !", "Magnifique !", "Dans la boîte !", "Superbe prise !")
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SceneScreen(
     ui: QuestionUi,
@@ -89,10 +98,20 @@ fun SceneScreen(
             }
         }
 
+        val scroll = rememberScrollState()
+        val feedback = remember { BringIntoViewRequester() }
+        LaunchedEffect(q.id, ui.checked) {
+            if (ui.checked) {
+                delay(150)
+                feedback.bringIntoView()
+            } else {
+                scroll.scrollTo(0)
+            }
+        }
         Column(
             Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scroll)
                 .padding(horizontal = 22.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -101,7 +120,9 @@ fun SceneScreen(
             q.options.forEachIndexed { i, option ->
                 OptionRow(option, i, ui, onSelect)
             }
-            if (ui.checked) Feedback(ui)
+            if (ui.checked) {
+                Box(Modifier.bringIntoViewRequester(feedback)) { Feedback(ui) }
+            }
             Spacer(Modifier.height(8.dp))
         }
 
@@ -156,7 +177,7 @@ private fun Stage(ui: QuestionUi, onListen: (Boolean) -> Unit) {
             Game.DOUBLAGE, Game.SCRIPT -> {
                 q.speaker?.let { name ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Avatar(name)
+                        SpeakerAvatar(name)
                         Text(name, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -250,21 +271,37 @@ private fun OptionRow(text: String, i: Int, ui: QuestionUi, onSelect: (Int) -> U
 private fun Feedback(ui: QuestionUi) {
     val q = ui.q
     val ok = ui.selected == q.answer
+    val praises = if (ui.feminine) PRAISES_F else PRAISES_M
     val title = when {
-        ok -> PRAISES[Math.floorMod(q.id.hashCode(), PRAISES.size)]
+        ok -> praises[Math.floorMod(q.id.hashCode(), praises.size)]
         ui.selected == null -> "Temps écoulé !"
         else -> "Presque !"
     }
+    val wrongNote = ui.selected?.let { q.optionNotes.getOrNull(it) }
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(if (ok) Cv.GoodBg else Cv.BadBg)
             .padding(14.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = if (ok) Cv.Good else Cv.Bad)
-        Text(q.reveal, fontSize = 15.sp)
+        if (!ok) {
+            FeedbackPart("La bonne réponse", q.options[q.answer])
+            if (wrongNote != null) FeedbackPart("Ton choix", wrongNote)
+        }
+        q.why?.let { FeedbackPart(if (ok) "Pourquoi c'est juste" else "Pourquoi", it) }
+        FeedbackPart("Traduction", q.translation)
+        q.gloss?.let { FeedbackPart("Les mots", it.replace(" · ", "\n")) }
         if (!ok) Text("Pas de souci : cette réplique reviendra dans une prochaine scène.", fontSize = 13.sp, color = Cv.Muted)
+    }
+}
+
+@Composable
+private fun FeedbackPart(label: String, text: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label.uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = Cv.Gold)
+        Text(text, fontSize = 15.sp, lineHeight = 21.sp)
     }
 }

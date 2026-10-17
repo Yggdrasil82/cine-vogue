@@ -23,15 +23,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import fr.cinevogue.data.GENRES
 import fr.cinevogue.data.Game
-import fr.cinevogue.data.POINTS_PER_ANSWER
+import fr.cinevogue.data.Gender
 import fr.cinevogue.data.Genre
+import fr.cinevogue.data.POINTS_PER_ANSWER
+import fr.cinevogue.data.Profile
+import fr.cinevogue.data.ProfileRepo
 import fr.cinevogue.data.Progress
 import fr.cinevogue.data.ProgressStore
 import fr.cinevogue.data.Scene
+import fr.cinevogue.data.Settings
 import fr.cinevogue.data.Studio
 import fr.cinevogue.data.finishScene
+import fr.cinevogue.data.genresFor
 import fr.cinevogue.data.nextToPlay
 import fr.cinevogue.data.rankFor
 import fr.cinevogue.ui.AppFrame
@@ -39,6 +43,9 @@ import fr.cinevogue.ui.CineTheme
 import fr.cinevogue.ui.Cv
 import fr.cinevogue.ui.GenreScreen
 import fr.cinevogue.ui.HomeScreen
+import fr.cinevogue.ui.PickerScreen
+import fr.cinevogue.ui.ProfileCard
+import fr.cinevogue.ui.ProfileFormScreen
 import fr.cinevogue.ui.ProfileScreen
 import fr.cinevogue.ui.QuestionUi
 import fr.cinevogue.ui.ResultScreen
@@ -46,113 +53,224 @@ import fr.cinevogue.ui.ResultUi
 import fr.cinevogue.ui.SceneScreen
 import fr.cinevogue.ui.Tab
 import fr.cinevogue.ui.TrophiesScreen
+import fr.cinevogue.ui.VoiceScreen
 import fr.cinevogue.ui.formatTime
 import kotlinx.coroutines.delay
 import java.time.LocalDate
 import kotlin.random.Random
 
 class MainActivity : ComponentActivity() {
-    private lateinit var store: ProgressStore
-    private lateinit var voice: Voice
+    private lateinit var repo: ProfileRepo
+    private lateinit var narrator: Narrator
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        store = ProgressStore(this)
-        voice = Voice(this)
-        Reminder.sync(this, store.load())
+        repo = ProfileRepo(this)
+        narrator = Narrator(this)
+        Reminder.sync(this, repo.settings())
         setContent {
             CineTheme {
                 Box(Modifier.fillMaxSize().background(Cv.Bg)) {
-                    CineApp(store, voice)
+                    CineApp(repo, narrator)
                 }
             }
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Des voix ont pu être installées dans les réglages.
+        narrator.refresh()
+    }
+
     override fun onDestroy() {
-        voice.shutdown()
+        narrator.shutdown()
         super.onDestroy()
     }
 }
 
 private sealed interface Route {
+    data object Picker : Route
+    data class Form(val profileId: String?) : Route
     data class Main(val tab: Tab) : Route
     data class GenreRoute(val id: String) : Route
     data class Play(val sceneId: String) : Route
     data class Result(val ui: ResultUi, val nextSceneId: String?) : Route
+    data object Voices : Route
 }
 
 private fun today(): Long = LocalDate.now().toEpochDay()
 
 @Composable
-private fun CineApp(store: ProgressStore, voice: Voice) {
+private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
     val context = LocalContext.current
-    var progress by remember { mutableStateOf(store.load()) }
-    var route by remember { mutableStateOf<Route>(Route.Main(Tab.PLATEAU)) }
+    var profiles by remember { mutableStateOf(repo.profiles()) }
+    var settings by remember { mutableStateOf(repo.settings()) }
+    var currentId by remember { mutableStateOf<String?>(null) }
+    var progress by remember { mutableStateOf(Progress()) }
+    var route by remember { mutableStateOf<Route>(if (profiles.isEmpty()) Route.Form(null) else Route.Picker) }
 
-    fun update(p: Progress) {
+    val current: Profile? = profiles.firstOrNull { it.id == currentId }
+
+    fun open(p: Profile) {
+        currentId = p.id
+        progress = ProgressStore(context, p.prefs).load()
+        route = Route.Main(Tab.PLATEAU)
+    }
+
+    fun saveProgress(p: Progress) {
+        val prof = current ?: return
         progress = p
-        store.save(p)
-        Reminder.sync(context, p)
+        ProgressStore(context, prof.prefs).save(p)
+    }
+
+    fun saveProfile(p: Profile) {
+        repo.update(p)
+        profiles = repo.profiles()
+    }
+
+    fun saveSettings(s: Settings) {
+        settings = s
+        repo.saveSettings(s)
+        Reminder.sync(context, s)
     }
 
     val askPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= 33 && !store.askedNotifications &&
+        if (Build.VERSION.SDK_INT >= 33 && !repo.askedNotifications &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            store.askedNotifications = true
+            repo.askedNotifications = true
             askPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 
-    when (val r = route) {
+    // Sans profil choisi, seuls le choix et la création sont possibles.
+    val r = route
+    if (current == null && r !is Route.Picker && r !is Route.Form) {
+        LaunchedEffect(r) { route = if (profiles.isEmpty()) Route.Form(null) else Route.Picker }
+        return
+    }
+
+    when (r) {
+        is Route.Picker -> {
+            PickerScreen(
+                cards = profiles.map { p ->
+                    val pr = ProgressStore(context, p.prefs).load()
+                    ProfileCard(p, rankFor(pr.points).title(p.gender), pr.points)
+                },
+                onPick = { open(it) },
+                onAdd = { route = Route.Form(null) },
+            )
+        }
+
+        is Route.Form -> {
+            val editing = r.profileId?.let { id -> profiles.firstOrNull { it.id == id } }
+            val canCancel = editing != null || profiles.isNotEmpty()
+            val back = { route = if (editing != null) Route.Main(Tab.PROFIL) else Route.Picker }
+            if (canCancel) BackHandler { back() }
+            ProfileFormScreen(
+                initial = editing,
+                legacyNote = remember { repo.hasLegacyProgress() },
+                onSave = { name, gender, level, color ->
+                    if (editing == null) {
+                        val created = repo.create(name, gender, level, color)
+                        profiles = repo.profiles()
+                        open(created)
+                    } else {
+                        saveProfile(editing.copy(name = name, gender = gender, level = level, color = color))
+                        route = Route.Main(Tab.PROFIL)
+                    }
+                },
+                onCancel = if (canCancel) back else null,
+                onDelete = editing?.let { prof ->
+                    {
+                        repo.delete(prof)
+                        profiles = repo.profiles()
+                        currentId = null
+                        route = if (profiles.isEmpty()) Route.Form(null) else Route.Picker
+                    }
+                },
+            )
+        }
+
         is Route.Main -> {
-            if (r.tab != Tab.PLATEAU) BackHandler { route = Route.Main(Tab.PLATEAU) }
+            val prof = current!!
+            val genres = genresFor(prof.level)
+            BackHandler { route = if (r.tab != Tab.PLATEAU) Route.Main(Tab.PLATEAU) else Route.Picker }
             AppFrame(r.tab, onTab = { route = Route.Main(it) }) {
                 when (r.tab) {
                     Tab.PLATEAU -> HomeScreen(
-                        progress, today(),
+                        prof, genres, progress, today(),
                         onPlay = { route = Route.Play(it) },
                         onGenre = { route = Route.GenreRoute(it) },
+                        onSwitch = { route = Route.Picker },
                     )
-                    Tab.TROPHEES -> TrophiesScreen(progress)
+                    Tab.TROPHEES -> TrophiesScreen(genres, progress, prof.gender)
                     Tab.PROFIL -> ProfileScreen(
-                        progress, today(),
-                        voiceOk = voice.ukAvailable,
-                        onReminder = { on -> update(progress.copy(reminderOn = on)) },
+                        profile = prof,
+                        genres = genres,
+                        p = progress,
+                        settings = settings,
+                        today = today(),
+                        voiceLabel = narrator.label(prof.voice),
+                        voiceOk = narrator.ukAvailable || narrator.voices.isNotEmpty(),
+                        onEdit = { route = Route.Form(prof.id) },
+                        onSwitch = { route = Route.Picker },
+                        onReminder = { on -> saveSettings(settings.copy(reminderOn = on)) },
                         onPickTime = {
                             TimePickerDialog(
                                 context,
-                                { _, h, m -> update(progress.copy(reminderHour = h, reminderMinute = m)) },
-                                progress.reminderHour, progress.reminderMinute, true,
+                                { _, h, m -> saveSettings(settings.copy(reminderHour = h, reminderMinute = m)) },
+                                settings.reminderHour, settings.reminderMinute, true,
                             ).show()
                         },
-                        onTestVoice = { voice.speak("Hello! Welcome to Ciné Vogue. Are you ready for your first scene?") },
+                        onChooseVoice = { narrator.refresh(); route = Route.Voices },
+                        onTestVoice = { narrator.speak(sampleLine(prof), voiceName = prof.voice) },
                     )
                 }
             }
         }
 
+        is Route.Voices -> {
+            val prof = current!!
+            BackHandler { route = Route.Main(Tab.PROFIL) }
+            VoiceScreen(
+                voices = narrator.voices,
+                selected = prof.voice,
+                onPick = { name -> saveProfile(prof.copy(voice = name)) },
+                onPlay = { name -> narrator.speak(sampleLine(prof), voiceName = name) },
+                onInstall = { Narrator.openSettings(context) },
+                onBack = { route = Route.Main(Tab.PROFIL) },
+            )
+        }
+
         is Route.GenreRoute -> {
-            val genre = GENRES.first { it.id == r.id }
-            BackHandler { route = Route.Main(Tab.PLATEAU) }
-            GenreScreen(genre, progress, onPlay = { route = Route.Play(it) }, onBack = { route = Route.Main(Tab.PLATEAU) })
+            val prof = current!!
+            val genre = genresFor(prof.level).firstOrNull { it.id == r.id }
+            if (genre == null) {
+                LaunchedEffect(r) { route = Route.Main(Tab.PLATEAU) }
+            } else {
+                BackHandler { route = Route.Main(Tab.PLATEAU) }
+                GenreScreen(genre, progress, onPlay = { route = Route.Play(it) }, onBack = { route = Route.Main(Tab.PLATEAU) })
+            }
         }
 
         is Route.Play -> {
+            val prof = current!!
+            val genres = genresFor(prof.level)
             val found = Studio.find(r.sceneId)
             if (found == null) {
                 LaunchedEffect(r) { route = Route.Main(Tab.PLATEAU) }
             } else {
                 val (genre, scene) = found
                 SceneHost(
-                    genre, scene, progress.missed, voice,
+                    genres, genre, scene, progress.missed, prof, narrator,
                     onQuit = { route = Route.Main(Tab.PLATEAU) },
                     onFinish = { correct, wrong ->
                         val before = rankFor(progress.points)
                         val (updated, stars) = finishScene(progress, scene.id, correct, wrong, today())
-                        update(updated)
+                        saveProgress(updated)
                         val after = rankFor(updated.points)
                         route = Route.Result(
                             ResultUi(
@@ -163,10 +281,10 @@ private fun CineApp(store: ProgressStore, voice: Voice) {
                                 points = correct.size * POINTS_PER_ANSWER,
                                 words = scene.words,
                                 tip = scene.tip,
-                                reminder = if (updated.reminderOn) "Prochain tournage demain à ${formatTime(updated.reminderHour, updated.reminderMinute)}" else null,
-                                newRank = if (after != before) after.title else null,
+                                reminder = if (settings.reminderOn) "Prochain tournage demain à ${formatTime(settings.reminderHour, settings.reminderMinute)}" else null,
+                                newRank = if (after != before) after.title(prof.gender) else null,
                             ),
-                            nextToPlay(updated)?.second?.id,
+                            nextToPlay(genres, updated)?.second?.id,
                         )
                     },
                 )
@@ -184,16 +302,21 @@ private fun CineApp(store: ProgressStore, voice: Voice) {
     }
 }
 
+private fun sampleLine(p: Profile): String =
+    "Hello ${p.name}! Welcome to Ciné Vogue. Are you ready for your next scene?"
+
 @Composable
 private fun SceneHost(
+    genres: List<Genre>,
     genre: Genre,
     scene: Scene,
     missed: Set<String>,
-    voice: Voice,
+    profile: Profile,
+    narrator: Narrator,
     onQuit: () -> Unit,
     onFinish: (List<String>, List<String>) -> Unit,
 ) {
-    val questions = remember(scene.id) { Studio.session(genre, scene, missed, Random(System.nanoTime())) }
+    val questions = remember(scene.id) { Studio.session(genres, genre, scene, missed, Random(System.nanoTime())) }
     var index by remember(scene.id) { mutableIntStateOf(0) }
     var selected by remember(scene.id) { mutableStateOf<Int?>(null) }
     var checked by remember(scene.id) { mutableStateOf(false) }
@@ -203,6 +326,7 @@ private fun SceneHost(
     val wrong = remember(scene.id) { mutableStateListOf<String>() }
 
     val q = questions[index]
+    val say = { text: String, slow: Boolean -> narrator.speak(text, slow, profile.voice) }
 
     fun check() {
         if (checked) return
@@ -216,10 +340,10 @@ private fun SceneHost(
         seconds = 10
         if (q.game == Game.CASTING) {
             delay(500)
-            q.audio?.let { voice.speak(it) }
+            q.audio?.let { say(it, false) }
         }
         if (q.game == Game.CLAP) {
-            q.audio?.let { voice.speak(it) }
+            q.audio?.let { say(it, false) }
             while (seconds > 0 && !checked) {
                 delay(1000)
                 if (!checked) seconds -= 1
@@ -239,6 +363,7 @@ private fun SceneHost(
             secondsLeft = if (q.game == Game.CLAP) seconds else null,
             sceneNumber = Studio.sceneNumber(genre, scene),
             genreTitle = genre.title,
+            feminine = profile.gender == Gender.FILLE,
         ),
         onSelect = { if (!checked && it !in eliminated) selected = it },
         onAction = {
@@ -259,7 +384,7 @@ private fun SceneHost(
                 if (wrongOptions.isNotEmpty()) eliminated = setOf(wrongOptions.random())
             }
         },
-        onListen = { slow -> q.audio?.let { voice.speak(it, slow) } },
+        onListen = { slow -> q.audio?.let { say(it, slow) } },
         onQuit = onQuit,
     )
 }

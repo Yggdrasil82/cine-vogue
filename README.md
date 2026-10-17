@@ -1,23 +1,28 @@
 # Ciné Vogue
 
-Appli Android pour apprendre l'anglais en s'amusant, sur le thème du cinéma.
-Niveau débutant (seconde), pour les études et les voyages.
+Appli Android pour apprendre l'anglais en s'amusant, sur le thème du cinéma,
+pour les études et les voyages. Deux niveaux : débutant (A2) et avancé (B1+ → C1).
 
-- Carrière d'actrice : de Figurante à Star d'Hollywood
+- Plusieurs profils, chacun avec son niveau, sa progression et sa voix
+- Carrière : de Figurante ou Figurant à Star d'Hollywood
+- Après chaque réponse : traduction, mots importants et explication de l'erreur
 - 4 jeux : le doublage, le script troué, le casting (écoute), le clap de fin
-- 5 films : Comédie au lycée, Road movie, Romance au café, Policier, Science-fiction
-- Voix anglaise du téléphone (accent britannique), hors ligne
+- Débutant : Comédie au lycée, Road movie, Romance au café, Policier, Science-fiction
+- Avancé : Drame à la fac, Thriller, Film d'aventure, Comédie sociale, Film d'anticipation
+- Voix anglaises du téléphone au choix (accent britannique par défaut)
 - Rappel quotidien (18 h 30 par défaut)
 
 ## Compilation (GitHub Actions)
 
-- Captures d'écran : pousser un tag `captures-…` → images sur la branche `captures`
-- APK : pousser un tag `vX.Y` → APK dans « Releases »
+Lancement manuel du workflow « Ciné Vogue » :
+- mode `captures` → images sur la branche `captures`
+- mode `apk` → APK publié dans « Releases » (tag `vX.Y` créé automatiquement)
 
 ## Versions
 
+- **1.1** : profils, niveau avancé B1+ → C1, corrections détaillées, choix de la voix
 - **1.0** : première version
 
 ## Prochainement
 
-- Niveau B1+ → C1 (après les premiers tests de la v1.0)
+- (rien pour l'instant)

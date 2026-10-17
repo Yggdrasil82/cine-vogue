@@ -2,7 +2,7 @@ package fr.cinevogue.data
 
 import android.content.Context
 
-/** Tout ce que l'appli retient, en une photo immuable. */
+/** La progression d'un profil, en une photo immuable. */
 data class Progress(
     val points: Int = 0,
     val sceneStars: Map<String, Int> = emptyMap(),
@@ -11,13 +11,11 @@ data class Progress(
     val lastDay: Long = -10L,
     val missed: Set<String> = emptySet(),
     val perfectCount: Int = 0,
-    val reminderOn: Boolean = true,
-    val reminderHour: Int = 18,
-    val reminderMinute: Int = 30,
 )
 
-class ProgressStore(context: Context) {
-    private val prefs = context.applicationContext.getSharedPreferences("cinevogue", Context.MODE_PRIVATE)
+/** Un fichier de sauvegarde par profil. Le premier profil reprend le fichier de la v1.0. */
+class ProgressStore(context: Context, prefsName: String) {
+    private val prefs = context.applicationContext.getSharedPreferences(prefsName, Context.MODE_PRIVATE)
 
     fun load(): Progress = Progress(
         points = prefs.getInt("points", 0),
@@ -27,9 +25,6 @@ class ProgressStore(context: Context) {
         lastDay = prefs.getLong("lastDay", -10L),
         missed = (prefs.getStringSet("missed", emptySet()) ?: emptySet()).toSet(),
         perfectCount = prefs.getInt("perfect", 0),
-        reminderOn = prefs.getBoolean("reminderOn", true),
-        reminderHour = prefs.getInt("reminderHour", 18),
-        reminderMinute = prefs.getInt("reminderMinute", 30),
     )
 
     fun save(p: Progress) {
@@ -41,15 +36,12 @@ class ProgressStore(context: Context) {
             .putLong("lastDay", p.lastDay)
             .putStringSet("missed", p.missed.toSet())
             .putInt("perfect", p.perfectCount)
-            .putBoolean("reminderOn", p.reminderOn)
-            .putInt("reminderHour", p.reminderHour)
-            .putInt("reminderMinute", p.reminderMinute)
             .apply()
     }
 
-    var askedNotifications: Boolean
-        get() = prefs.getBoolean("askedNotif", false)
-        set(value) { prefs.edit().putBoolean("askedNotif", value).apply() }
+    fun clear() {
+        prefs.edit().clear().apply()
+    }
 
     private fun decode(s: String): Map<String, Int> =
         s.split(",").mapNotNull { part ->

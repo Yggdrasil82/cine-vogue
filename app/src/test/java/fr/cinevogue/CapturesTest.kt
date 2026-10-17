@@ -7,15 +7,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
-import fr.cinevogue.data.GENRES
+import fr.cinevogue.data.ADVANCED
+import fr.cinevogue.data.BEGINNER
 import fr.cinevogue.data.Game
+import fr.cinevogue.data.Gender
+import fr.cinevogue.data.Genre
+import fr.cinevogue.data.Level
+import fr.cinevogue.data.Profile
 import fr.cinevogue.data.Progress
+import fr.cinevogue.data.Scene
+import fr.cinevogue.data.Settings
 import fr.cinevogue.data.Studio
 import fr.cinevogue.ui.AppFrame
 import fr.cinevogue.ui.CineTheme
 import fr.cinevogue.ui.Cv
-import fr.cinevogue.ui.GenreScreen
 import fr.cinevogue.ui.HomeScreen
+import fr.cinevogue.ui.PickerScreen
+import fr.cinevogue.ui.ProfileCard
+import fr.cinevogue.ui.ProfileFormScreen
 import fr.cinevogue.ui.ProfileScreen
 import fr.cinevogue.ui.QuestionUi
 import fr.cinevogue.ui.ResultScreen
@@ -23,6 +32,7 @@ import fr.cinevogue.ui.ResultUi
 import fr.cinevogue.ui.SceneScreen
 import fr.cinevogue.ui.Tab
 import fr.cinevogue.ui.TrophiesScreen
+import fr.cinevogue.ui.VoiceScreen
 import org.junit.Rule
 import org.junit.Test
 import kotlin.random.Random
@@ -36,6 +46,8 @@ class CapturesTest {
     )
 
     private val today = 20000L
+    private val lea = Profile("p1", "Léa", Gender.FILLE, Level.DEBUTANT, 0, null, "cinevogue")
+    private val tom = Profile("p2", "Tom", Gender.GARCON, Level.AVANCE, 4, null, "cinevogue_p2")
     private val sample = Progress(
         points = 120,
         sceneStars = mapOf("g1s1" to 3, "g1s2" to 2, "g1s3" to 2),
@@ -45,6 +57,7 @@ class CapturesTest {
         missed = setOf("g1s2-s1", "g1s3-d0"),
         perfectCount = 1,
     )
+    private val advanced = Progress(points = 185, sceneStars = mapOf("a1s1" to 3, "a1s2" to 3, "a1s3" to 2, "a1s4" to 2, "a2s1" to 2), streak = 5, bestStreak = 5, lastDay = today)
 
     private fun shot(content: @Composable () -> Unit) {
         paparazzi.snapshot {
@@ -54,44 +67,64 @@ class CapturesTest {
         }
     }
 
-    private val genre = GENRES[0]
-    private val scene = GENRES[0].scenes[3]
-    private fun question(game: Game) = Studio.candidates(genre, scene, Random(7)).first { it.game == game }
+    private fun question(genre: Genre, scene: Scene, game: Game) =
+        Studio.candidates(genre, scene, Random(7)).first { it.game == game }
 
-    private fun ui(game: Game, number: Int, selected: Int?, checked: Boolean, wrongPick: Boolean = false): QuestionUi {
-        val q = question(game).let { if (number == 6) it.copy(retake = true) else it }
-        val pick = if (wrongPick) q.options.indices.first { it != q.answer } else selected
-        return QuestionUi(q, number, 8, pick, checked, emptySet(), if (game == Game.CLAP) 7 else null, 4, genre.title)
+    private fun ui(genre: Genre, scene: Scene, game: Game, number: Int, feminine: Boolean = true) =
+        QuestionUi(question(genre, scene, game), number, 8, null, false, emptySet(), if (game == Game.CLAP) 7 else null,
+            Studio.sceneNumber(genre, scene), genre.title, feminine)
+
+    @Test
+    fun a_qui_tourne() = shot {
+        PickerScreen(listOf(ProfileCard(lea, "Figurante", 120), ProfileCard(tom, "Second rôle", 185)), {}, {})
     }
 
     @Test
-    fun a_accueil() = shot {
-        AppFrame(Tab.PLATEAU, {}) { HomeScreen(sample, today, {}, {}) }
+    fun b_nouveau_profil() = shot {
+        ProfileFormScreen(null, legacyNote = true, onSave = { _, _, _, _ -> }, onCancel = {}, onDelete = null)
     }
 
     @Test
-    fun b_film() = shot { GenreScreen(genre, sample, {}, {}) }
-
-    @Test
-    fun c_doublage() = shot {
-        val u = ui(Game.DOUBLAGE, 1, null, false)
-        SceneScreen(u.copy(selected = u.q.answer), {}, {}, {}, {}, {})
+    fun c_accueil_debutant() = shot {
+        AppFrame(Tab.PLATEAU, {}) { HomeScreen(lea, BEGINNER, sample, today, {}, {}, {}) }
     }
 
     @Test
-    fun d_script_troue_erreur() = shot { SceneScreen(ui(Game.SCRIPT, 3, null, true, wrongPick = true), {}, {}, {}, {}, {}) }
-
-    @Test
-    fun e_casting() = shot { SceneScreen(ui(Game.CASTING, 6, null, false), {}, {}, {}, {}, {}) }
-
-    @Test
-    fun f_clap_de_fin_reussi() = shot {
-        val u = ui(Game.CLAP, 8, null, true)
-        SceneScreen(u.copy(selected = u.q.answer), {}, {}, {}, {}, {})
+    fun d_accueil_avance() = shot {
+        AppFrame(Tab.PLATEAU, {}) { HomeScreen(tom, ADVANCED, advanced, today, {}, {}, {}) }
     }
 
     @Test
-    fun g_fin_de_scene() = shot {
+    fun e_script_troue_erreur() = shot {
+        val g = BEGINNER[0]
+        val u = ui(g, g.scenes[0], Game.SCRIPT, 3)
+        SceneScreen(u.copy(selected = u.q.options.indices.first { it != u.q.answer }, checked = true), {}, {}, {}, {}, {})
+    }
+
+    @Test
+    fun f_doublage_reussi() = shot {
+        val g = BEGINNER[0]
+        val u = ui(g, g.scenes[0], Game.DOUBLAGE, 1)
+        SceneScreen(u.copy(selected = u.q.answer, checked = true), {}, {}, {}, {}, {})
+    }
+
+    @Test
+    fun g_avance_doublage_erreur() = shot {
+        val g = ADVANCED[1]
+        val u = ui(g, g.scenes[0], Game.DOUBLAGE, 2, feminine = false)
+        SceneScreen(u.copy(selected = u.q.options.indices.first { it != u.q.answer }, checked = true), {}, {}, {}, {}, {})
+    }
+
+    @Test
+    fun h_avance_script_reussi() = shot {
+        val g = ADVANCED[0]
+        val u = ui(g, g.scenes[1], Game.SCRIPT, 4, feminine = false)
+        SceneScreen(u.copy(selected = u.q.answer, checked = true), {}, {}, {}, {}, {})
+    }
+
+    @Test
+    fun i_fin_de_scene() = shot {
+        val scene = BEGINNER[0].scenes[3]
         ResultScreen(
             ResultUi(
                 sceneTitle = scene.title, correct = 7, total = 8, stars = 2, points = 35,
@@ -103,8 +136,29 @@ class CapturesTest {
     }
 
     @Test
-    fun h_trophees() = shot { AppFrame(Tab.TROPHEES, {}) { TrophiesScreen(sample) } }
+    fun j_profil() = shot {
+        AppFrame(Tab.PROFIL, {}) {
+            ProfileScreen(
+                lea, BEGINNER, sample, Settings(), today,
+                voiceLabel = "Voix 2 · femme (accent britannique · haute qualité · hors ligne)", voiceOk = true,
+                onEdit = {}, onSwitch = {}, onReminder = {}, onPickTime = {}, onChooseVoice = {}, onTestVoice = {},
+            )
+        }
+    }
 
     @Test
-    fun i_profil() = shot { AppFrame(Tab.PROFIL, {}) { ProfileScreen(sample, today, true, {}, {}, {}) } }
+    fun k_choix_voix() = shot {
+        VoiceScreen(
+            voices = listOf(
+                VoiceOption("v1", "Voix 1", "accent britannique · haute qualité · hors ligne"),
+                VoiceOption("v2", "Voix 2 · femme", "accent britannique · hors ligne"),
+                VoiceOption("v3", "Voix 3 · homme", "accent britannique · avec internet"),
+                VoiceOption("v4", "Voix 4", "accent américain · hors ligne"),
+            ),
+            selected = "v2", onPick = {}, onPlay = {}, onInstall = {}, onBack = {},
+        )
+    }
+
+    @Test
+    fun l_trophees_acteur() = shot { AppFrame(Tab.TROPHEES, {}) { TrophiesScreen(ADVANCED, advanced, Gender.GARCON) } }
 }

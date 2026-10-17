@@ -162,8 +162,9 @@ fun StarsRow(count: Int, total: Int = 3, dp: Dp = 46.dp, color: Color = Cv.Gold)
     }
 }
 
+/** Pastille d'un personnage du scénario. */
 @Composable
-fun Avatar(name: String, dp: Dp = 46.dp) {
+fun SpeakerAvatar(name: String, dp: Dp = 46.dp) {
     Box(
         Modifier
             .size(dp)
@@ -173,6 +174,38 @@ fun Avatar(name: String, dp: Dp = 46.dp) {
         contentAlignment = Alignment.Center,
     ) {
         Text(name.take(1).uppercase(), fontFamily = Bebas, fontSize = 22.sp, color = Cv.Gold)
+    }
+}
+
+/** Couleurs proposées pour les profils. */
+val AVATAR_COLORS = listOf(
+    Color(0xFFE2B546),
+    Color(0xFFE8735A),
+    Color(0xFF4FB3A9),
+    Color(0xFF9B7BE0),
+    Color(0xFF5B9BE0),
+    Color(0xFF7FC46B),
+)
+
+fun avatarColor(index: Int): Color = AVATAR_COLORS[Math.floorMod(index, AVATAR_COLORS.size)]
+
+/** Pastille d'un profil : l'initiale du prénom sur sa couleur. */
+@Composable
+fun ProfileAvatar(name: String, color: Int, dp: Dp = 46.dp, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(dp)
+            .clip(CircleShape)
+            .background(avatarColor(color))
+            .border(2.dp, Cv.Cream, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            name.trim().take(1).uppercase().ifEmpty { "?" },
+            fontFamily = Bebas,
+            fontSize = (dp.value * 0.5f).sp,
+            color = Cv.Bg,
+        )
     }
 }
 
