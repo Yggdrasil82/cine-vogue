@@ -23,6 +23,25 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
+import androidx.compose.runtime.rememberCoroutineScope
+import fr.cinevogue.ai.AiError
+import fr.cinevogue.ai.AiReview
+import fr.cinevogue.ai.AiTurn
+import fr.cinevogue.ai.ChatLine
+import fr.cinevogue.ai.Mistral
+import fr.cinevogue.data.AiScenario
+import fr.cinevogue.data.finishAi
+import fr.cinevogue.data.scenarioFor
+import fr.cinevogue.ui.AiIntroScreen
+import fr.cinevogue.ui.AiResultScreen
+import fr.cinevogue.ui.AiDialogueScreen
+import fr.cinevogue.ui.AiUi
+import fr.cinevogue.ui.ParentSettingsScreen
+import fr.cinevogue.ui.PinScreen
+import kotlinx.coroutines.launch
 import fr.cinevogue.data.FILMS
 import fr.cinevogue.data.Game
 import fr.cinevogue.data.Question
@@ -115,6 +134,11 @@ private sealed interface Route {
     data object LineForm : Route
     data class Eval(val genreId: String) : Route
     data class EvalResult(val ui: EvalUi, val genreId: String, val nextGenreId: String?) : Route
+    data class AiIntro(val genreId: String) : Route
+    data class AiPlay(val genreId: String, val take: Long = System.nanoTime()) : Route
+    data class AiResult(val genreId: String, val review: AiReview, val objectivesDone: Int, val best: Int) : Route
+    data class Pin(val change: Boolean = false) : Route
+    data object Parent : Route
 }
 
 private fun today(): Long = LocalDate.now().toEpochDay()
@@ -129,6 +153,12 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
     var route by remember { mutableStateOf<Route>(if (profiles.isEmpty()) Route.Form(null) else Route.Picker) }
 
     val current: Profile? = profiles.firstOrNull { it.id == currentId }
+    val scope = rememberCoroutineScope()
+    var aiKey by remember { mutableStateOf(repo.mistralKey) }
+    var aiModel by remember { mutableStateOf(repo.mistralModel) }
+    var pinError by remember { mutableStateOf<String?>(null) }
+    var testMessage by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
 
     fun open(p: Profile) {
         currentId = p.id
@@ -165,7 +195,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
 
     // Sans profil choisi, seuls le choix et la création sont possibles.
     val r = route
-    if (current == null && r !is Route.Picker && r !is Route.Form) {
+    if (current == null && r !is Route.Picker && r !is Route.Form && r !is Route.Pin && r !is Route.Parent) {
         LaunchedEffect(r) { route = if (profiles.isEmpty()) Route.Form(null) else Route.Picker }
         return
     }
@@ -262,6 +292,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                         },
                         onChooseVoice = { narrator.refresh(); route = Route.Voices },
                         onTestVoice = { narrator.speak(sampleLine(prof), voiceName = prof.voice) },
+                        onParent = { pinError = null; route = Route.Pin() },
                     )
                 }
             }
@@ -308,6 +339,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                     onBack = { route = Route.Main(Tab.PLATEAU) },
                     withEval = genresFor(prof.level).any { it.id == genre.id },
                     onEval = { route = Route.Eval(genre.id) },
+                    onAi = { route = Route.AiIntro(genre.id) },
                 )
             }
         }
@@ -446,6 +478,98 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
             }
         }
 
+        is Route.AiIntro -> {
+            val s = scenarioFor(r.genreId)
+            if (s == null) {
+                LaunchedEffect(r) { route = Route.Main(Tab.PLATEAU) }
+            } else {
+                BackHandler { route = Route.GenreRoute(r.genreId) }
+                AiIntroScreen(
+                    s, ready = aiKey.isNotBlank(), best = progress.aiBest[r.genreId],
+                    onStart = { route = Route.AiPlay(r.genreId) },
+                    onBack = { route = Route.GenreRoute(r.genreId) },
+                )
+            }
+        }
+
+        is Route.AiPlay -> {
+            val prof = current!!
+            val s = scenarioFor(r.genreId)
+            if (s == null) {
+                LaunchedEffect(r) { route = Route.Main(Tab.PLATEAU) }
+            } else {
+                AiHost(
+                    key = r.take, scenario = s, profile = prof, apiKey = aiKey, model = aiModel, narrator = narrator,
+                    onQuit = { narrator.stop(); route = Route.GenreRoute(r.genreId) },
+                    onDone = { review, done ->
+                        val updated = finishAi(progress, r.genreId, review.score, today())
+                        saveProgress(updated)
+                        route = Route.AiResult(r.genreId, review, done, updated.aiBest[r.genreId] ?: review.score)
+                    },
+                )
+            }
+        }
+
+        is Route.AiResult -> {
+            val s = scenarioFor(r.genreId)!!
+            BackHandler { route = Route.GenreRoute(r.genreId) }
+            AiResultScreen(
+                s, r.review, r.objectivesDone, r.best,
+                onRetry = { route = Route.AiPlay(r.genreId) },
+                onBack = { route = Route.GenreRoute(r.genreId) },
+            )
+        }
+
+        is Route.Pin -> {
+            val back = { route = if (current != null) Route.Main(Tab.PROFIL) else Route.Picker }
+            BackHandler { back() }
+            val creating = r.change || !repo.hasPin()
+            PinScreen(
+                creating = creating,
+                error = pinError,
+                onSubmit = { pin ->
+                    if (creating) {
+                        repo.setPin(pin)
+                        pinError = null
+                        route = Route.Parent
+                    } else if (repo.checkPin(pin)) {
+                        pinError = null
+                        route = Route.Parent
+                    } else {
+                        pinError = "Code incorrect."
+                    }
+                },
+                onBack = back,
+            )
+        }
+
+        is Route.Parent -> {
+            val back = { testMessage = null; route = if (current != null) Route.Main(Tab.PROFIL) else Route.Picker }
+            BackHandler { back() }
+            ParentSettingsScreen(
+                hasKey = aiKey.isNotBlank(),
+                model = aiModel,
+                testMessage = testMessage,
+                testing = testing,
+                onSaveKey = { k -> repo.mistralKey = k; aiKey = repo.mistralKey; testMessage = null },
+                onSaveModel = { m -> repo.mistralModel = m; aiModel = repo.mistralModel; testMessage = "✓ Modèle enregistré." },
+                onTest = {
+                    scope.launch {
+                        testing = true
+                        testMessage = try {
+                            if (Mistral.test(aiKey, aiModel)) "✓ La clé fonctionne." else "La clé répond, mais de façon inattendue."
+                        } catch (e: AiError) {
+                            e.messageFr
+                        }
+                        testing = false
+                    }
+                },
+                onDeleteKey = { repo.mistralKey = ""; aiKey = ""; testMessage = null },
+                onChangePin = { pinError = null; route = Route.Pin(change = true) },
+                onBack = back,
+            )
+        }
+
         is Route.EvalResult -> {
             BackHandler { route = Route.Main(Tab.PLATEAU) }
             EvalResultScreen(
@@ -465,6 +589,129 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
             )
         }
     }
+}
+
+private const val AI_MAX_TURNS = 10
+
+/** Déroulé d'une scène improvisée : micro → IA → réponse du personnage, puis bilan. */
+@Composable
+private fun AiHost(
+    key: Long,
+    scenario: AiScenario,
+    profile: Profile,
+    apiKey: String,
+    model: String,
+    narrator: Narrator,
+    onQuit: () -> Unit,
+    onDone: (AiReview, Int) -> Unit,
+) {
+    val scope = rememberCoroutineScope()
+    val lines = remember(key) { mutableStateListOf(ChatLine(false, scenario.opening, AiTurn(scenario.opening, "happy"))) }
+    var done by remember(key) { mutableStateOf(setOf<Int>()) }
+    var loading by remember(key) { mutableStateOf(false) }
+    var error by remember(key) { mutableStateOf<String?>(null) }
+    var hint by remember(key) { mutableStateOf<String?>(null) }
+    var mood by remember(key) { mutableStateOf("happy") }
+    var reviewing by remember(key) { mutableStateOf(false) }
+    var finished by remember(key) { mutableStateOf(false) }
+    val learnerTurns = lines.count { it.fromLearner }
+    val say = { text: String -> narrator.speak(text, voiceName = profile.voice, pitch = scenario.character.pitch) }
+
+    fun review() {
+        reviewing = true
+        scope.launch {
+            loading = true
+            error = null
+            try {
+                val result = Mistral.review(apiKey, model, scenario, profile.level, lines.toList(), done.size)
+                onDone(result, done.size)
+            } catch (e: AiError) {
+                error = e.messageFr
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    fun send() {
+        scope.launch {
+            loading = true
+            error = null
+            hint = null
+            try {
+                val turn = Mistral.nextTurn(apiKey, model, scenario, profile.level, profile.name, lines.toList())
+                lines.add(ChatLine(false, turn.reply, turn))
+                done = done + turn.objectivesDone.filter { it in scenario.objectivesEn.indices }
+                mood = turn.mood
+                say(turn.reply)
+                if (turn.finished || lines.count { it.fromLearner } >= AI_MAX_TURNS) finished = true
+            } catch (e: AiError) {
+                error = e.messageFr
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val text = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (!text.isNullOrBlank()) {
+            lines.add(ChatLine(true, text))
+            send()
+        }
+    }
+
+    LaunchedEffect(key) {
+        delay(400)
+        say(scenario.opening)
+    }
+    // Fin naturelle : on laisse le personnage finir sa phrase, puis on passe au bilan.
+    LaunchedEffect(finished) {
+        if (finished && !reviewing) {
+            delay(800)
+            while (narrator.speaking) delay(200)
+            review()
+        }
+    }
+
+    BackHandler { onQuit() }
+
+    AiDialogueScreen(
+        ui = AiUi(
+            scenario = scenario,
+            lines = lines.toList(),
+            objectivesDone = done,
+            loading = loading,
+            error = error,
+            hint = hint,
+            mood = mood,
+            speaking = narrator.speaking,
+            turnsLeft = AI_MAX_TURNS - learnerTurns,
+        ),
+        animate = true,
+        onMic = {
+            narrator.stop()
+            hint = null
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB")
+                .putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak in English")
+                .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            try {
+                listen.launch(intent)
+            } catch (e: ActivityNotFoundException) {
+                error = "La reconnaissance vocale n'est pas disponible. Installe ou active l'appli Google sur ce téléphone."
+            }
+        },
+        onHint = {
+            val last = lines.lastOrNull { !it.fromLearner }?.turn?.hintFr.orEmpty()
+            hint = last.ifBlank { "Réponds à la question de ${scenario.character.name} avec une phrase simple. Tu peux commencer par « I… » ou « Yes, … »." }
+        },
+        onReplay = { say(it) },
+        onRetry = { if (reviewing) review() else if (lines.lastOrNull()?.fromLearner == true) send() else error = null },
+        onFinish = { narrator.stop(); review() },
+        onQuit = onQuit,
+    )
 }
 
 private fun sampleLine(p: Profile): String =

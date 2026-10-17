@@ -34,7 +34,10 @@ import androidx.compose.ui.unit.sp
 import fr.cinevogue.data.Genre
 import fr.cinevogue.data.Profile
 import fr.cinevogue.data.Progress
+import fr.cinevogue.data.AiScenario
 import fr.cinevogue.data.EVAL_OSCAR
+import fr.cinevogue.data.evalPassed
+import fr.cinevogue.data.scenarioFor
 import fr.cinevogue.data.EVAL_PASS
 import fr.cinevogue.data.currentStreak
 import fr.cinevogue.data.genreDone
@@ -251,6 +254,7 @@ fun GenreScreen(
     onBack: () -> Unit,
     withEval: Boolean = false,
     onEval: () -> Unit = {},
+    onAi: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize().background(Cv.Bg)) {
         Column(
@@ -307,7 +311,42 @@ fun GenreScreen(
                 }
             }
             if (withEval) EvalCard(genre, p, onEval)
+            if (withEval) scenarioFor(genre.id)?.let { AiCard(it, genre, p, onAi) }
         }
+    }
+}
+
+/** La scène improvisée avec l'IA, débloquée après l'avant-première réussie. */
+@Composable
+private fun AiCard(s: AiScenario, genre: Genre, p: Progress, onAi: () -> Unit) {
+    val open = evalPassed(p, genre)
+    val best = p.aiBest[genre.id]
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (open) Cv.Card else Cv.Locked)
+            .border(2.dp, if (open) Cv.Gold else Cv.Line, shape)
+            .clickable(enabled = open, onClick = onAi)
+            .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        AnimatedCharacter(s.character.look, "happy", speaking = false, size = 64.dp, animate = false)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("SCÈNE IMPROVISÉE", fontFamily = Bebas, fontSize = 20.sp, letterSpacing = 1.5.sp, color = if (open) Cv.Gold else Cv.Dim)
+            Text(s.title, fontWeight = FontWeight.Bold, color = if (open) Cv.Cream else Cv.Dim)
+            Text(
+                when {
+                    !open -> "Réussis l'avant-première pour parler avec ${s.character.name}."
+                    best != null -> "Meilleure note : $best/20 · parle au micro avec une IA"
+                    else -> "Parle en anglais au micro avec ${s.character.name}, joué par une IA."
+                },
+                fontSize = 13.sp, color = if (open) Cv.Muted else Cv.Dim,
+            )
+        }
+        Icon(if (open) Icons.Filled.PlayArrow else Icons.Filled.Lock, contentDescription = null, tint = if (open) Cv.Gold else Cv.Dim)
     }
 }
 

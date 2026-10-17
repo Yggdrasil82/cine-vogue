@@ -67,6 +67,22 @@ fun finishEval(p: Progress, genreId: String, correct: List<String>, wrong: List<
     )
 }
 
+/** Met à jour la carrière après une scène improvisée avec l'IA (la note sur 20 donne autant d'étoiles). */
+fun finishAi(p: Progress, genreId: String, score: Int, today: Long): Progress {
+    val streak = when {
+        p.lastDay == today -> maxOf(p.streak, 1)
+        p.lastDay == today - 1 -> p.streak + 1
+        else -> 1
+    }
+    return p.copy(
+        points = p.points + score,
+        aiBest = p.aiBest + (genreId to maxOf(score, p.aiBest[genreId] ?: 0)),
+        streak = streak,
+        bestStreak = maxOf(p.bestStreak, streak),
+        lastDay = today,
+    )
+}
+
 fun sceneUnlocked(g: Genre, sceneIndex: Int, p: Progress): Boolean =
     sceneIndex == 0 || sceneDone(p, g.scenes[sceneIndex - 1].id)
 
@@ -116,6 +132,7 @@ fun trophies(genres: List<Genre>, p: Progress, gender: Gender, films: List<Genre
         Trophy("Une semaine de tournage", "Tourner 7 jours de suite", p.bestStreak >= 7),
         Trophy("Cinéphile", "Terminer toutes les scènes d'un de tes films", films.any { genreDone(it, p) }),
         Trophy("Scénariste", "Noter 5 répliques dans « Mes répliques »", p.myLines.size >= 5),
+        Trophy("Improvisation", "Obtenir $EVAL_OSCAR/20 ou plus à une scène avec l'IA", p.aiBest.values.any { it >= EVAL_OSCAR }),
     ) + genres.map { g ->
         Trophy("Oscar : ${g.title}", "Obtenir au moins $EVAL_OSCAR/20 à l'avant-première", (p.evalBest[g.id] ?: 0) >= EVAL_OSCAR)
     } + listOf(

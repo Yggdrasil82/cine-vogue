@@ -35,6 +35,12 @@ class Narrator(context: Context) : TextToSpeech.OnInitListener {
     var voices by mutableStateOf<List<VoiceOption>>(emptyList())
         private set
 
+    /** Vrai pendant que la voix parle (pour animer la bouche du personnage). */
+    var speaking by mutableStateOf(false)
+        private set
+
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+
     override fun onInit(status: Int) {
         if (status != TextToSpeech.SUCCESS) {
             ukAvailable = false
@@ -45,6 +51,12 @@ class Narrator(context: Context) : TextToSpeech.OnInitListener {
         if (!ok) tts.setLanguage(Locale.US)
         ukAvailable = ok
         ready = true
+        tts.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) { main.post { speaking = true } }
+            override fun onDone(utteranceId: String?) { main.post { speaking = false } }
+            @Deprecated("Deprecated in Java")
+            override fun onError(utteranceId: String?) { main.post { speaking = false } }
+        })
         refresh()
     }
 
@@ -92,7 +104,7 @@ class Narrator(context: Context) : TextToSpeech.OnInitListener {
     fun label(name: String?): String =
         voices.firstOrNull { it.name == name }?.let { "${it.label} (${it.detail})" } ?: "Automatique (accent britannique)"
 
-    fun speak(text: String, slow: Boolean = false, voiceName: String? = null) {
+    fun speak(text: String, slow: Boolean = false, voiceName: String? = null, pitch: Float = 1.0f) {
         if (!ready) return
         val chosen = voiceName?.let { n -> raw.firstOrNull { it.name == n } }
         if (chosen != null) {
@@ -104,9 +116,14 @@ class Narrator(context: Context) : TextToSpeech.OnInitListener {
         } else {
             tts.setLanguage(if (ukAvailable) Locale.UK else Locale.US)
         }
-        tts.setPitch(1.0f)
+        tts.setPitch(pitch)
         tts.setSpeechRate(if (slow) 0.6f else 0.95f)
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "cinevogue")
+    }
+
+    fun stop() {
+        tts.stop()
+        speaking = false
     }
 
     fun shutdown() {

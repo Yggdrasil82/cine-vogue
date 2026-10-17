@@ -109,6 +109,7 @@ fun ProfileScreen(
     onPickTime: () -> Unit,
     onChooseVoice: () -> Unit,
     onTestVoice: () -> Unit,
+    onParent: () -> Unit = {},
 ) {
     val totalScenes = genres.sumOf { it.scenes.size }
     val done = genres.sumOf { scenesDone(it, p) }
@@ -187,6 +188,12 @@ fun ProfileScreen(
                     LineButton(formatTime(settings.reminderHour, settings.reminderMinute), onClick = onPickTime, color = Cv.Gold, border = Cv.Gold)
                 }
             }
+        }
+
+        SectionTitle("Réglages parent", 24)
+        Card {
+            Text("IA des scènes improvisées, code parent", fontSize = 13.sp, color = Cv.Muted)
+            LineButton("Ouvrir les réglages parent", onClick = onParent, modifier = Modifier.fillMaxWidth())
         }
     }
 }

@@ -7,7 +7,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
+import fr.cinevogue.ai.AiReview
+import fr.cinevogue.ai.AiTurn
+import fr.cinevogue.ai.ChatLine
 import fr.cinevogue.data.ADVANCED
+import fr.cinevogue.data.AI_SCENARIOS
 import fr.cinevogue.data.BEGINNER
 import fr.cinevogue.data.FILMS_ADVANCED
 import fr.cinevogue.data.FILMS_BEGINNER
@@ -22,7 +26,12 @@ import fr.cinevogue.data.Progress
 import fr.cinevogue.data.Scene
 import fr.cinevogue.data.Settings
 import fr.cinevogue.data.Studio
+import fr.cinevogue.ui.AiDialogueScreen
+import fr.cinevogue.ui.AiIntroScreen
+import fr.cinevogue.ui.AiResultScreen
+import fr.cinevogue.ui.AiUi
 import fr.cinevogue.ui.AppFrame
+import fr.cinevogue.ui.ParentSettingsScreen
 import fr.cinevogue.ui.CineTheme
 import fr.cinevogue.ui.Cv
 import fr.cinevogue.ui.EvalResultScreen
@@ -211,7 +220,7 @@ class CapturesTest {
 
     @Test
     fun r_theme_avant_premiere() = shot {
-        GenreScreen(BEGINNER[0], g1Done, {}, {}, withEval = true, onEval = {})
+        GenreScreen(BEGINNER[0], g1Done.copy(evalBest = mapOf("g1" to 15)), {}, {}, withEval = true, onEval = {})
     }
 
     @Test
@@ -247,6 +256,68 @@ class CapturesTest {
                 newRank = null,
             ),
             onNext = {}, onRetry = {}, onHome = {},
+        )
+    }
+
+    private val jordan = AI_SCENARIOS.first { it.genreId == "g1" }
+    private val reid = AI_SCENARIOS.first { it.genreId == "a2" }
+
+    @Test
+    fun v_ia_presentation() = shot { AiIntroScreen(jordan, ready = true, best = null, onStart = {}, onBack = {}) }
+
+    @Test
+    fun w_ia_dialogue() = shot {
+        val t1 = AiTurn("Nice to meet you, Léa! How old are you?", "happy", "On dit « I'm from France » : from pour l'origine.", "My name is Léa and I'm from France.", "Dis ton âge : « I'm fifteen. »", setOf(0))
+        AiDialogueScreen(
+            AiUi(
+                scenario = jordan,
+                lines = listOf(
+                    ChatLine(false, jordan.opening, AiTurn(jordan.opening)),
+                    ChatLine(true, "my name is Léa I am of France"),
+                    ChatLine(false, t1.reply, t1),
+                ),
+                objectivesDone = setOf(0), loading = false, error = null,
+                hint = "Dis ton âge : « I'm fifteen. »", mood = "happy", speaking = true, turnsLeft = 9,
+            ),
+            animate = false, onMic = {}, onHint = {}, onReplay = {}, onRetry = {}, onFinish = {}, onQuit = {},
+        )
+    }
+
+    @Test
+    fun x_ia_dialogue_avance() = shot {
+        val t1 = AiTurn("Quite the coincidence. And who exactly can confirm that?", "thinking", "", "", "", setOf(0))
+        AiDialogueScreen(
+            AiUi(
+                scenario = reid,
+                lines = listOf(
+                    ChatLine(false, reid.opening, AiTurn(reid.opening)),
+                    ChatLine(true, "I was looking at the sculptures on the first floor when the alarm went off"),
+                    ChatLine(false, t1.reply, t1),
+                ),
+                objectivesDone = setOf(0), loading = true, error = null, hint = null, mood = "thinking", speaking = false, turnsLeft = 9,
+            ),
+            animate = false, onMic = {}, onHint = {}, onReplay = {}, onRetry = {}, onFinish = {}, onQuit = {},
+        )
+    }
+
+    @Test
+    fun y_ia_bilan() = shot {
+        AiResultScreen(
+            jordan,
+            AiReview(
+                15, "Tu as répondu à toutes les questions de Jordan et tu as osé parler. Ta prononciation est claire.",
+                listOf("Pour l'origine, dis « I'm from France » et non « of France ».", "Pense au -s : « He likes football »."),
+                "« What about you? » = « Et toi ? » : parfait pour relancer la conversation.",
+            ),
+            objectivesDone = 3, best = 15, onRetry = {}, onBack = {},
+        )
+    }
+
+    @Test
+    fun z_reglages_parent() = shot {
+        ParentSettingsScreen(
+            hasKey = true, model = "", testMessage = "✓ La clé fonctionne.", testing = false,
+            onSaveKey = {}, onSaveModel = {}, onTest = {}, onDeleteKey = {}, onChangePin = {}, onBack = {},
         )
     }
 }

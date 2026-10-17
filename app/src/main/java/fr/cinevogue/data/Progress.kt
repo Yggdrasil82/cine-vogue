@@ -19,6 +19,8 @@ data class Progress(
     val myLines: List<MyLine> = emptyList(),
     /** Meilleure note sur 20 à l'avant-première de chaque thème. */
     val evalBest: Map<String, Int> = emptyMap(),
+    /** Meilleure note sur 20 à la scène avec l'IA de chaque thème. */
+    val aiBest: Map<String, Int> = emptyMap(),
 )
 
 /** Un fichier de sauvegarde par profil. Le premier profil reprend le fichier de la v1.0. */
@@ -35,6 +37,7 @@ class ProgressStore(context: Context, prefsName: String) {
         perfectCount = prefs.getInt("perfect", 0),
         myLines = decodeLines(prefs.getString("mylines", null)),
         evalBest = decode(prefs.getString("evals", "") ?: ""),
+        aiBest = decode(prefs.getString("ai", "") ?: ""),
     )
 
     fun save(p: Progress) {
@@ -48,6 +51,7 @@ class ProgressStore(context: Context, prefsName: String) {
             .putInt("perfect", p.perfectCount)
             .putString("mylines", encodeLines(p.myLines))
             .putString("evals", p.evalBest.entries.joinToString(",") { "${it.key}:${it.value}" })
+            .putString("ai", p.aiBest.entries.joinToString(",") { "${it.key}:${it.value}" })
             .apply()
     }
 

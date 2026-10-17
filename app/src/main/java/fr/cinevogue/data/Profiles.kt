@@ -110,6 +110,29 @@ class ProfileRepo(context: Context) {
             .apply()
     }
 
+    /** Clé Mistral saisie par un parent (reste sur le téléphone). */
+    var mistralKey: String
+        get() = app.getString("mistralKey", "") ?: ""
+        set(value) { app.edit().putString("mistralKey", value.trim()).apply() }
+
+    var mistralModel: String
+        get() = app.getString("mistralModel", "") ?: ""
+        set(value) { app.edit().putString("mistralModel", value.trim()).apply() }
+
+    /** Code parent, enregistré sous forme d'empreinte (jamais en clair). */
+    fun hasPin(): Boolean = !app.getString("pinHash", null).isNullOrEmpty()
+
+    fun checkPin(pin: String): Boolean = app.getString("pinHash", null) == hash(pin)
+
+    fun setPin(pin: String) {
+        app.edit().putString("pinHash", hash(pin)).apply()
+    }
+
+    private fun hash(pin: String): String =
+        java.security.MessageDigest.getInstance("SHA-256")
+            .digest(("cinevogue:" + pin).toByteArray())
+            .joinToString("") { "%02x".format(it) }
+
     var askedNotifications: Boolean
         get() = app.getBoolean("askedNotif", legacy.getBoolean("askedNotif", false))
         set(value) { app.edit().putBoolean("askedNotif", value).apply() }
