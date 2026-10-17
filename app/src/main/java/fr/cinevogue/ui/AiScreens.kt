@@ -236,6 +236,8 @@ data class AiUi(
     val mood: String,
     val speaking: Boolean,
     val turnsLeft: Int,
+    /** Phrase comprise par le téléphone, en attente de validation par l'élève. */
+    val pending: String? = null,
 )
 
 /** Le dialogue avec le personnage. */
@@ -249,6 +251,9 @@ fun AiDialogueScreen(
     onRetry: () -> Unit,
     onFinish: () -> Unit,
     onQuit: () -> Unit,
+    onSend: (text: String, edited: Boolean) -> Unit = { _, _ -> },
+    onRedo: () -> Unit = {},
+    onPractice: (String) -> Unit = {},
 ) {
     val s = ui.scenario
     val scroll = rememberScrollState()
@@ -288,7 +293,9 @@ fun AiDialogueScreen(
             ui.lines.forEachIndexed { i, line ->
                 if (line.fromLearner) {
                     val reply = ui.lines.getOrNull(i + 1)?.turn
-                    LearnerBubble(line.text, reply?.better.orEmpty(), reply?.correctionFr.orEmpty())
+                    LearnerBubble(line.text, reply?.better.orEmpty(), reply?.correctionFr.orEmpty(), line.heard) {
+                        onPractice(reply?.better?.ifBlank { null } ?: line.text)
+                    }
                 } else {
                     CharacterBubble(s.character.name, line.text) { onReplay(line.text) }
                 }
@@ -312,7 +319,8 @@ fun AiDialogueScreen(
                 }
             }
         }
-        Row(
+        ui.pending?.let { heard -> PendingPanel(heard, onSend, onRedo) }
+        if (ui.pending == null) Row(
             Modifier.fillMaxWidth().background(Cv.Nav).padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -361,8 +369,40 @@ private fun CharacterBubble(name: String, text: String, onReplay: () -> Unit) {
     }
 }
 
+/** La phrase comprise par le téléphone : on l'envoie, on la redit ou on la corrige. */
 @Composable
-private fun LearnerBubble(text: String, better: String, correction: String) {
+private fun PendingPanel(heard: String, onSend: (String, Boolean) -> Unit, onRedo: () -> Unit) {
+    var editing by remember(heard) { mutableStateOf(false) }
+    var text by remember(heard) { mutableStateOf(heard) }
+    Column(
+        Modifier.fillMaxWidth().background(Cv.Nav).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("LE TÉLÉPHONE A COMPRIS :", fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = Cv.Gold)
+        if (editing) {
+            androidx.compose.material3.OutlinedTextField(
+                value = text,
+                onValueChange = { if (it.length <= 300) text = it },
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Cv.Gold, unfocusedBorderColor = Cv.Track, cursorColor = Cv.Gold,
+                    focusedTextColor = Cv.Cream, unfocusedTextColor = Cv.Cream,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            Text("« $heard »", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text("Si un mot est faux, c'est peut-être un mot à mieux prononcer : redis la phrase, ou corrige-la.", fontSize = 12.sp, color = Cv.Muted)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            LineButton("Redire", onClick = onRedo, modifier = Modifier.weight(1f))
+            if (!editing) LineButton("Corriger", onClick = { editing = true }, modifier = Modifier.weight(1f))
+            GoldButton("Envoyer", onClick = { onSend(text.trim(), text.trim() != heard) }, enabled = text.isNotBlank(), fontSize = 18, modifier = Modifier.weight(1.2f))
+        }
+    }
+}
+
+@Composable
+private fun LearnerBubble(text: String, better: String, correction: String, heard: String?, onPractice: () -> Unit) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Column(
             Modifier.widthIn(max = 290.dp).clip(RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomEnd = 16.dp, bottomStart = 16.dp))
@@ -371,6 +411,7 @@ private fun LearnerBubble(text: String, better: String, correction: String) {
         ) {
             Text("TOI", fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = Cv.Gold)
             Text(text, fontSize = 15.sp, lineHeight = 21.sp)
+            if (heard != null) Text("Le téléphone avait compris : « $heard »", fontSize = 12.sp, color = Cv.Muted, fontStyle = FontStyle.Italic)
         }
         if (better.isNotBlank() || correction.isNotBlank()) {
             Column(
@@ -380,6 +421,13 @@ private fun LearnerBubble(text: String, better: String, correction: String) {
                 if (better.isNotBlank()) Text("Mieux : $better", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Cv.Good)
                 if (correction.isNotBlank()) Text(correction, fontSize = 13.sp, color = Cv.Muted, lineHeight = 18.sp)
             }
+        }
+        if (heard != null || better.isNotBlank()) {
+            Text(
+                "Travailler la prononciation",
+                fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Cv.Gold,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onPractice).padding(horizontal = 6.dp, vertical = 4.dp),
+            )
         }
     }
 }
@@ -409,6 +457,10 @@ fun AiResultScreen(s: AiScenario, review: AiReview, objectivesDone: Int, best: I
                 if (review.improveFr.isNotEmpty()) {
                     SectionTitle("À travailler", 24)
                     review.improveFr.forEach { Text("•  $it", fontSize = 15.sp, lineHeight = 21.sp) }
+                }
+                if (review.pronunciationFr.isNotBlank()) {
+                    SectionTitle("Prononciation", 24)
+                    Text(review.pronunciationFr, fontSize = 15.sp, lineHeight = 21.sp)
                 }
                 if (review.tipFr.isNotBlank()) {
                     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Cv.Cream).padding(16.dp)) {

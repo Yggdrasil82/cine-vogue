@@ -171,7 +171,7 @@ fun ParentSettingsScreen(
                 OutlinedTextField(
                     value = modelText,
                     onValueChange = { modelText = it.trim() },
-                    label = { Text("Modèle (par défaut : mistral-small-latest)") },
+                    label = { Text("Modèle (par défaut : ministral-8b-latest)") },
                     singleLine = true,
                     colors = parentFieldColors(),
                     modifier = Modifier.fillMaxWidth(),
@@ -179,7 +179,7 @@ fun ParentSettingsScreen(
                 LineButton("Enregistrer le modèle", onClick = { onSaveModel(modelText) }, color = Cv.Gold, border = Cv.Gold, modifier = Modifier.fillMaxWidth())
             }
             LineButton("Changer le code parent", onClick = onChangePin, modifier = Modifier.fillMaxWidth())
-            Text("Ciné Vogue 1.2", fontSize = 12.sp, color = Cv.Dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            Text("Ciné Vogue 1.3", fontSize = 12.sp, color = Cv.Dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
     }
 }

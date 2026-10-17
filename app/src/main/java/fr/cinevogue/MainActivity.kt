@@ -46,6 +46,8 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import fr.cinevogue.ui.ShareKeyScreen
+import fr.cinevogue.ui.RepeatDialog
+import fr.cinevogue.ui.RepeatTools
 import fr.cinevogue.ui.keyFromQr
 import fr.cinevogue.data.FILMS
 import fr.cinevogue.data.Game
@@ -165,6 +167,12 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
     var pinError by remember { mutableStateOf<String?>(null) }
     var testMessage by remember { mutableStateOf<String?>(null) }
     var testing by remember { mutableStateOf(false) }
+    var repeatTarget by remember { mutableStateOf<String?>(null) }
+    val tools = RepeatTools(
+        speak = { text, slow -> narrator.speak(text, slow, current?.voice) },
+        aiTip = if (aiKey.isBlank()) null else { w, sentence, heard -> Mistral.pronunciationTip(aiKey, aiModel, w, sentence, heard) },
+    )
+    repeatTarget?.let { t -> RepeatDialog(t, tools) { repeatTarget = null } }
 
     fun open(p: Profile) {
         currentId = p.id
@@ -276,6 +284,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                             )
                         },
                         onReview = { route = Route.Play(Studio.MY_SCENE) },
+                        onRepeat = { repeatTarget = it },
                     )
                     Tab.TROPHEES -> TrophiesScreen(genres, progress, prof.gender, films)
                     Tab.PROFIL -> ProfileScreen(
@@ -388,6 +397,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                         subtitle = "Ton carnet",
                         profile = prof,
                         narrator = narrator,
+                        tools = tools,
                         onQuit = { route = Route.Main(Tab.REPLIQUES) },
                         onFinish = { answers ->
                             val (correct, wrong) = split(answers)
@@ -412,6 +422,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                         subtitle = genre.title,
                         profile = prof,
                         narrator = narrator,
+                        tools = tools,
                         onQuit = { route = Route.Main(Tab.PLATEAU) },
                         onFinish = { answers ->
                             val (correct, wrong) = split(answers)
@@ -444,6 +455,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                     subtitle = genre.title,
                     profile = prof,
                     narrator = narrator,
+                    tools = tools,
                     exam = true,
                     onQuit = { route = Route.GenreRoute(genre.id) },
                     onFinish = { answers ->
@@ -505,7 +517,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                 LaunchedEffect(r) { route = Route.Main(Tab.PLATEAU) }
             } else {
                 AiHost(
-                    key = r.take, scenario = s, profile = prof, apiKey = aiKey, model = aiModel, narrator = narrator,
+                    key = r.take, scenario = s, profile = prof, apiKey = aiKey, model = aiModel, narrator = narrator, tools = tools,
                     onQuit = { narrator.stop(); route = Route.GenreRoute(r.genreId) },
                     onDone = { review, done ->
                         val updated = finishAi(progress, r.genreId, review.score, today())
@@ -640,9 +652,14 @@ private fun AiHost(
     apiKey: String,
     model: String,
     narrator: Narrator,
+    tools: RepeatTools,
     onQuit: () -> Unit,
     onDone: (AiReview, Int) -> Unit,
 ) {
+    var pending by remember(key) { mutableStateOf<String?>(null) }
+    var pendingAlts by remember(key) { mutableStateOf(listOf<String>()) }
+    var practice by remember(key) { mutableStateOf<String?>(null) }
+    practice?.let { t -> RepeatDialog(t, tools) { practice = null } }
     val scope = rememberCoroutineScope()
     val lines = remember(key) { mutableStateListOf(ChatLine(false, scenario.opening, AiTurn(scenario.opening, "happy"))) }
     var done by remember(key) { mutableStateOf(setOf<Int>()) }
@@ -692,10 +709,25 @@ private fun AiHost(
     }
 
     val listen = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val text = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
-        if (!text.isNullOrBlank()) {
-            lines.add(ChatLine(true, text))
-            send()
+        val alts = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS).orEmpty().filter { it.isNotBlank() }
+        if (alts.isNotEmpty()) {
+            pending = alts.first()
+            pendingAlts = alts.drop(1).distinct().take(2)
+        }
+    }
+
+    fun startMic() {
+        narrator.stop()
+        hint = null
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB")
+            .putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak in English")
+            .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+        try {
+            listen.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            error = "La reconnaissance vocale n'est pas disponible. Installe ou active l'appli Google sur ce téléphone."
         }
     }
 
@@ -725,22 +757,10 @@ private fun AiHost(
             mood = mood,
             speaking = narrator.speaking,
             turnsLeft = AI_MAX_TURNS - learnerTurns,
+            pending = pending,
         ),
         animate = true,
-        onMic = {
-            narrator.stop()
-            hint = null
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-                .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-GB")
-                .putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak in English")
-                .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-            try {
-                listen.launch(intent)
-            } catch (e: ActivityNotFoundException) {
-                error = "La reconnaissance vocale n'est pas disponible. Installe ou active l'appli Google sur ce téléphone."
-            }
-        },
+        onMic = { startMic() },
         onHint = {
             val last = lines.lastOrNull { !it.fromLearner }?.turn?.hintFr.orEmpty()
             hint = last.ifBlank { "Réponds à la question de ${scenario.character.name} avec une phrase simple. Tu peux commencer par « I… » ou « Yes, … »." }
@@ -749,6 +769,15 @@ private fun AiHost(
         onRetry = { if (reviewing) review() else if (lines.lastOrNull()?.fromLearner == true) send() else error = null },
         onFinish = { narrator.stop(); review() },
         onQuit = onQuit,
+        onSend = { text, edited ->
+            val heard = pending
+            lines.add(ChatLine(true, text, alts = if (edited) emptyList() else pendingAlts, heard = if (edited) heard else null))
+            pending = null
+            pendingAlts = emptyList()
+            send()
+        },
+        onRedo = { pending = null; startMic() },
+        onPractice = { practice = it },
     )
 }
 
@@ -773,10 +802,13 @@ private fun SceneHost(
     subtitle: String,
     profile: Profile,
     narrator: Narrator,
+    tools: RepeatTools,
     exam: Boolean = false,
     onQuit: () -> Unit,
     onFinish: (List<Pair<Question, Int?>>) -> Unit,
 ) {
+    var repeat by remember(key) { mutableStateOf<String?>(null) }
+    repeat?.let { t -> RepeatDialog(t, tools) { repeat = null } }
     val questions = remember(key) { build(Random(System.nanoTime())) }
     var index by remember(key) { mutableIntStateOf(0) }
     var selected by remember(key) { mutableStateOf<Int?>(null) }
@@ -861,5 +893,6 @@ private fun SceneHost(
         },
         onListen = { slow -> q.audio?.let { say(it, slow) } },
         onQuit = onQuit,
+        onRepeat = { repeat = it },
     )
 }

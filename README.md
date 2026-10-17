@@ -16,6 +16,8 @@ pour les études et les voyages. Deux niveaux : débutant (A2) et avancé (B1+ �
 - Mes répliques : on note une réplique entendue en VO, l'appli la lit et la fait réviser
 - Scène improvisée après chaque thème : dialogue au micro avec un personnage animé joué par
   une IA (Mistral), correction à chaque réplique et bilan noté sur 20
+- Répète après moi : la phrase est comparée mot à mot avec ce que le téléphone a compris,
+  mots ratés en rouge avec conseils de prononciation (et conseil de l'IA)
 - Voix anglaises du téléphone au choix (accent britannique par défaut)
 - Rappel quotidien (18 h 30 par défaut)
 
@@ -27,6 +29,8 @@ Lancement manuel du workflow « Ciné Vogue » :
 
 ## Versions
 
+- **1.3** : atelier « Répète après moi », vérification de la phrase dictée avant envoi à l'IA,
+  conseils de prononciation au bilan, IA plus robuste (réessai, modèle de secours, ministral par défaut)
 - **1.2** : scènes improvisées avec l'IA (Mistral), personnage animé, réglages parent, partage de la clé par QR code
 - **1.1** : profils, niveau avancé B1+ → C1, corrections détaillées, choix de la voix,
   19 films au choix (2 scènes chacun), Mes répliques, évaluation de fin de thème
@@ -35,3 +39,4 @@ Lancement manuel du workflow « Ciné Vogue » :
 ## Prochainement
 
 - Plus de scènes par film (2 pour l'instant)
+- Analyse phonétique fine avec Microsoft Azure (gratuité à vérifier)

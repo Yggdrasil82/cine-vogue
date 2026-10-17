@@ -49,6 +49,7 @@ fun MyLinesScreen(
     onPlay: (MyLine) -> Unit,
     onDelete: (MyLine) -> Unit,
     onReview: () -> Unit,
+    onRepeat: (String) -> Unit = {},
 ) {
     var toDelete by remember { mutableStateOf<MyLine?>(null) }
     Column(
@@ -103,6 +104,7 @@ fun MyLinesScreen(
                 Studio.knownWords(line.en)?.let {
                     Text("Mots connus : $it", fontSize = 13.sp, color = Cv.Muted, modifier = Modifier.padding(end = 12.dp))
                 }
+                LineButton("Répète après moi", onClick = { onRepeat(line.en) }, color = Cv.Gold, border = Cv.Gold, modifier = Modifier.padding(end = 12.dp))
             }
         }
     }

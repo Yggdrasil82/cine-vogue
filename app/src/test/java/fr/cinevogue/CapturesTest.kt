@@ -32,6 +32,8 @@ import fr.cinevogue.ui.AiResultScreen
 import fr.cinevogue.ui.AiUi
 import fr.cinevogue.ui.AppFrame
 import fr.cinevogue.ui.ParentSettingsScreen
+import fr.cinevogue.ui.RepeatContent
+import fr.cinevogue.data.Pronunciation
 import fr.cinevogue.ui.ShareKeyScreen
 import fr.cinevogue.ui.CineTheme
 import fr.cinevogue.ui.Cv
@@ -324,4 +326,30 @@ class CapturesTest {
 
     @Test
     fun zz_partager_cle() = shot { ShareKeyScreen("exemple-de-cle-fictive-0123456789", onBack = {}) }
+
+    @Test
+    fun zz_repete_apres_moi() = shot {
+        val target = "I think the weather will be better tomorrow."
+        RepeatContent(
+            target = target,
+            result = Pronunciation.check(target, listOf("I sink the weather will be better tomorrow", "I think the whether will be better tomorrow")),
+            error = null,
+            aiTips = mapOf("think" to "Pose la langue entre les dents et souffle : pas « sink », mais un son entre « s » et « f »."),
+            aiLoading = null, aiAvailable = true,
+            onListen = {}, onWord = {}, onMic = {}, onAskAi = {}, onClose = {},
+        )
+    }
+
+    @Test
+    fun zz_ia_verifier_dictee() = shot {
+        AiDialogueScreen(
+            AiUi(
+                scenario = jordan,
+                lines = listOf(ChatLine(false, jordan.opening, AiTurn(jordan.opening))),
+                objectivesDone = emptySet(), loading = false, error = null, hint = null, mood = "happy",
+                speaking = false, turnsLeft = 10, pending = "my name is Léa and I leave in Lyon",
+            ),
+            animate = false, onMic = {}, onHint = {}, onReplay = {}, onRetry = {}, onFinish = {}, onQuit = {},
+        )
+    }
 }

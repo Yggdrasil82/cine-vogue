@@ -13,8 +13,8 @@ android {
         applicationId = "fr.cinevogue"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 4
+        versionName = "1.3"
     }
 
     // Clé fixe : les mises à jour s'installent par-dessus sans désinstaller.

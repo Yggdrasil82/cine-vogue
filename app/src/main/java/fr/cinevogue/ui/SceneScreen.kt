@@ -75,6 +75,7 @@ fun SceneScreen(
     onHint: () -> Unit,
     onListen: (Boolean) -> Unit,
     onQuit: () -> Unit,
+    onRepeat: (String) -> Unit = {},
 ) {
     val q = ui.q
     Column(Modifier.fillMaxSize().background(Cv.Bg)) {
@@ -125,7 +126,7 @@ fun SceneScreen(
                 OptionRow(option, i, ui, onSelect)
             }
             if (ui.checked) {
-                Box(Modifier.bringIntoViewRequester(feedback)) { Feedback(ui) }
+                Box(Modifier.bringIntoViewRequester(feedback)) { Feedback(ui, onRepeat) }
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -281,7 +282,7 @@ private fun OptionRow(text: String, i: Int, ui: QuestionUi, onSelect: (Int) -> U
 }
 
 @Composable
-private fun Feedback(ui: QuestionUi) {
+private fun Feedback(ui: QuestionUi, onRepeat: (String) -> Unit) {
     val q = ui.q
     val ok = ui.selected == q.answer
     val praises = if (ui.feminine) PRAISES_F else PRAISES_M
@@ -308,6 +309,9 @@ private fun Feedback(ui: QuestionUi) {
         FeedbackPart("Traduction", q.translation)
         q.gloss?.let { FeedbackPart("Les mots", it.replace(" · ", "\n")) }
         if (!ok) Text("Pas de souci : cette réplique reviendra dans une prochaine scène.", fontSize = 13.sp, color = Cv.Muted)
+        q.audio?.let { sentence ->
+            LineButton("Répète après moi", onClick = { onRepeat(sentence) }, color = Cv.Gold, border = Cv.Gold, modifier = Modifier.fillMaxWidth())
+        }
     }
 }
 
