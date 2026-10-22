@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import fr.cinevogue.data.Tip
@@ -37,6 +38,8 @@ data class ResultUi(
     val tip: Tip,
     val reminder: String?,
     val newRank: String?,
+    /** Bilan des rushes (mini-révision des mots), s'il y en a eu. */
+    val rushes: String? = null,
 )
 
 @Composable
@@ -69,6 +72,7 @@ fun ResultScreen(ui: ResultUi, onNext: (() -> Unit)?, onHome: () -> Unit) {
                     fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Cv.Gold,
                 )
                 ui.newRank?.let { Pill("Nouveau rang : $it !") }
+                ui.rushes?.let { Text(it, fontSize = 14.sp, color = Cv.Cream, textAlign = TextAlign.Center) }
             }
             Box(Modifier.fillMaxWidth().height(3.dp).background(Cv.Gold))
 

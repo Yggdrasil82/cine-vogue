@@ -14,6 +14,9 @@ import java.net.URL
 /** Une erreur expliquée simplement à l'élève. */
 class AiError(val messageFr: String) : Exception(messageFr)
 
+/** Avis de l'IA sur une traduction. */
+data class Judgement(val correct: Boolean, val noteFr: String)
+
 /** Un tour de parole du personnage, tel que renvoyé par l'IA. */
 data class AiTurn(
     val reply: String,
@@ -250,6 +253,29 @@ $transcript
     }
 
     /** Conseil de prononciation pour un mot que le téléphone n'a pas compris. */
+    /** Sous-titrage : la traduction de l'élève est-elle aussi correcte que celle attendue ? */
+    suspend fun judgeTranslation(key: String, model: String, french: String, expected: String, typed: String): Judgement {
+        val fr = french.replace('"', '\'')
+        val model0 = expected.replace('"', '\'')
+        val student = typed.replace('"', '\'')
+        val prompt = """
+A French student translated a French sentence into English.
+French sentence: "$fr"
+Model answer: "$model0"
+Student answer: "$student"
+Is the student's answer a correct and natural English translation with the same meaning (small differences in wording are fine, spelling and grammar mistakes are not)?
+In French, in one or two short sentences, explain your decision to the student (what is wrong, or why it is also correct).
+Answer ONLY with a JSON object: {"correct": true or false, "explanation_fr": "..."}
+""".trimIndent()
+        val raw = chat(key, model, JSONArray().put(JSONObject().put("role", "user").put("content", prompt)), maxTokens = 200)
+        return try {
+            val o = JSONObject(extractJson(raw))
+            Judgement(o.optBoolean("correct", false), o.optString("explanation_fr").ifBlank { "" })
+        } catch (e: Exception) {
+            throw AiError("L'IA a répondu de façon inattendue. Réessaie.")
+        }
+    }
+
     suspend fun pronunciationTip(key: String, model: String, word: String, sentence: String, heard: String): String {
         val prompt = """
 A French teenager learning English tried to say this sentence: "$sentence".

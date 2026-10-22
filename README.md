@@ -6,8 +6,11 @@ pour les études et les voyages. Deux niveaux : débutant (A2) et avancé (B1+ �
 - Plusieurs profils, chacun avec son niveau, sa progression et sa voix
 - Carrière : de Figurante ou Figurant à Star d'Hollywood
 - Après chaque réponse : traduction, mots importants et explication de l'erreur
-- 4 jeux : le doublage, le script troué, le casting (écoute), le clap de fin
-- Avant-première : évaluation de fin de thème (12 questions, correction à la fin),
+- 6 jeux : le doublage, le script troué, le casting (écoute), le sous-titrage (écrire en anglais),
+  le montage (remettre les mots dans l'ordre), le clap de fin
+- Les rushes : mini-révision des mots après chaque scène, les mots ratés reviennent
+- 8 scènes par thème, 4 par film
+- Avant-première : évaluation de fin de thème (12 phrases nouvelles tirées au hasard, correction à la fin),
   10/20 pour débloquer le thème suivant, Oscar à 14/20
 - Débutant : Comédie au lycée, Road movie, Romance au café, Policier, Science-fiction
 - Avancé : Drame à la fac, Thriller, Film d'aventure, Comédie sociale, Film d'anticipation
@@ -29,6 +32,8 @@ Lancement manuel du workflow « Ciné Vogue » :
 
 ## Versions
 
+- **1.4** : 4 scènes de plus par thème et 2 de plus par film, sous-titrage (avec aide « mots en désordre »
+  et vérification par l'IA), montage, rushes après chaque scène, avant-premières avec phrases nouvelles
 - **1.3** : atelier « Répète après moi », vérification de la phrase dictée avant envoi à l'IA,
   conseils de prononciation au bilan, IA plus robuste (réessai, modèle de secours, ministral par défaut)
 - **1.2** : scènes improvisées avec l'IA (Mistral), personnage animé, réglages parent, partage de la clé par QR code
@@ -38,5 +43,4 @@ Lancement manuel du workflow « Ciné Vogue » :
 
 ## Prochainement
 
-- Plus de scènes par film (2 pour l'instant)
 - Analyse phonétique fine avec Microsoft Azure (gratuité à vérifier)

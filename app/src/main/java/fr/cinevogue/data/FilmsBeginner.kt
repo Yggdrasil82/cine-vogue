@@ -4,7 +4,7 @@ package fr.cinevogue.data
  * Films du niveau débutant. Répliques originales écrites pour l'appli,
  * dans l'univers de chaque film (aucune réplique réelle n'est reprise).
  */
-val FILMS_BEGINNER: List<Genre> = listOf(
+private val FILMS_BEGINNER_BASE: List<Genre> = listOf(
     Genre(
         "f01", "Harry Potter", "Poudlard, la magie, les amis",
         listOf(
@@ -435,3 +435,6 @@ val FILMS_BEGINNER: List<Genre> = listOf(
         ),
     ),
 )
+
+/** Thèmes complets : scènes d'origine + scènes ajoutées en v1.4. */
+val FILMS_BEGINNER: List<Genre> = withMoreScenes(FILMS_BEGINNER_BASE)

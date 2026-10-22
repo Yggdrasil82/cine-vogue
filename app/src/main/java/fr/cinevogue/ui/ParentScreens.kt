@@ -179,7 +179,7 @@ fun ParentSettingsScreen(
                 LineButton("Enregistrer le modèle", onClick = { onSaveModel(modelText) }, color = Cv.Gold, border = Cv.Gold, modifier = Modifier.fillMaxWidth())
             }
             LineButton("Changer le code parent", onClick = onChangePin, modifier = Modifier.fillMaxWidth())
-            Text("Ciné Vogue 1.3", fontSize = 12.sp, color = Cv.Dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            Text("Ciné Vogue 1.4", fontSize = 12.sp, color = Cv.Dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
     }
 }

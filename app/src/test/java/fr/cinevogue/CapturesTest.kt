@@ -26,6 +26,7 @@ import fr.cinevogue.data.Progress
 import fr.cinevogue.data.Scene
 import fr.cinevogue.data.Settings
 import fr.cinevogue.data.Studio
+import fr.cinevogue.data.TextCheck
 import fr.cinevogue.ui.AiDialogueScreen
 import fr.cinevogue.ui.AiIntroScreen
 import fr.cinevogue.ui.AiResultScreen
@@ -351,5 +352,98 @@ class CapturesTest {
             ),
             animate = false, onMic = {}, onHint = {}, onReplay = {}, onRetry = {}, onFinish = {}, onQuit = {},
         )
+    }
+
+    // ---------- v1.4 ----------
+
+    @Test
+    fun zz2_soustitrage_aide_mots() = shot {
+        val g = BEGINNER[0]
+        val q = question(g, g.scenes[1], Game.SOUSTITRAGE)
+        val words = TextCheck.tiles(q.expected!!)
+        val chosen = words.take(2).map { w -> q.tiles.indexOf(w) }
+        SceneScreen(
+            QuestionUi(q, 7, 11, null, false, emptySet(), null, "Scène 2", g.title, true, typed = "", chosen = chosen, helpAllowed = true, helpOn = true),
+            {}, {}, {}, {}, {},
+        )
+    }
+
+    @Test
+    fun zz3_soustitrage_faute_de_frappe() = shot {
+        val g = ADVANCED[0]
+        val q = question(g, g.scenes[0], Game.SOUSTITRAGE)
+        val words = q.expected!!.split(" ").toMutableList()
+        val i = words.indexOfFirst { it.length >= 5 && it.all { c -> c.isLetter() } }
+        if (i >= 0) words[i] = words[i].dropLast(2) + words[i].last() + words[i][words[i].length - 2]
+        val typed = words.joinToString(" ")
+        SceneScreen(
+            QuestionUi(q, 7, 11, null, true, emptySet(), null, "Scène 1", g.title, false, typed = typed, result = TextCheck.check(typed, q.expected!!)),
+            {}, {}, {}, {}, {},
+        )
+    }
+
+    @Test
+    fun zz4_soustitrage_erreur_ia() = shot {
+        val g = BEGINNER[2]
+        val q = question(g, g.scenes[0], Game.SOUSTITRAGE)
+        val typed = "I want a coffee please"
+        SceneScreen(
+            QuestionUi(q, 7, 11, null, true, emptySet(), null, "Scène 1", g.title, true, typed = typed, result = TextCheck.check(typed, q.expected!!), aiAvailable = true),
+            {}, {}, {}, {}, {},
+        )
+    }
+
+    @Test
+    fun zz5_montage() = shot {
+        val g = FILMS_BEGINNER[0]
+        val q = question(g, g.scenes[2], Game.MONTAGE)
+        val first = TextCheck.tiles(q.expected!!).first()
+        SceneScreen(
+            QuestionUi(q, 6, 11, null, false, emptySet(), null, "Scène 3", g.title, true, chosen = listOf(q.tiles.indexOf(first))),
+            {}, {}, {}, {}, {},
+        )
+    }
+
+    @Test
+    fun zz6_rushes_ecrire() = shot {
+        val g = BEGINNER[0]
+        val q = Studio.rushes(g, g.scenes[4], Random(2)).first { it.kind == "write" }
+        val typed = "banana"
+        SceneScreen(
+            QuestionUi(q, 3, 6, null, true, emptySet(), null, "Les rushes", g.scenes[4].title, true, typed = typed, result = TextCheck.check(typed, q.expected!!), requeue = true),
+            {}, {}, {}, {}, {},
+        )
+    }
+
+    @Test
+    fun zz7_rushes_ecoute() = shot {
+        val g = ADVANCED[2]
+        val q = Studio.rushes(g, g.scenes[5], Random(4)).first { it.kind == "listen" }
+        SceneScreen(QuestionUi(q, 2, 6, q.answer, false, emptySet(), null, "Les rushes", g.scenes[5].title, false, requeue = true), {}, {}, {}, {}, {})
+    }
+
+    @Test
+    fun zz8_fin_de_scene_rushes() = shot {
+        val scene = BEGINNER[0].scenes[5]
+        ResultScreen(
+            ResultUi(
+                sceneTitle = scene.title, correct = 10, total = 11, stars = 2, points = 50,
+                words = scene.words, tip = scene.tip, reminder = null, newRank = null,
+                rushes = "Les rushes : 5 mots sur 6 du premier coup. Les autres reviendront en « Prise 2 ».",
+            ),
+            onNext = {}, onHome = {},
+        )
+    }
+
+    @Test
+    fun zz9_avant_premiere_montage() = shot {
+        val q = Studio.evaluation(BEGINNER[1], Random(9)).first { it.game == Game.MONTAGE }
+        SceneScreen(QuestionUi(q, 9, 12, null, false, emptySet(), null, "Avant-première", BEGINNER[1].title, true, exam = true), {}, {}, {}, {}, {})
+    }
+
+    @Test
+    fun zz10_theme_8_scenes() = shot {
+        val stars = (1..8).associate { "g2s$it" to if (it <= 5) 3 else 0 }.filterValues { it > 0 }
+        GenreScreen(BEGINNER[1], sample.copy(sceneStars = stars, evalBest = mapOf("g1" to 15, "g2" to 12)), {}, {}, withEval = true, onEval = {})
     }
 }

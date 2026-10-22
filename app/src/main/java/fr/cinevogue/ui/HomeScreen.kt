@@ -353,8 +353,9 @@ private fun AiCard(s: AiScenario, genre: Genre, p: Progress, onAi: () -> Unit) {
 /** La carte de l'avant-première, en bas de la page d'un grand thème. */
 @Composable
 private fun EvalCard(genre: Genre, p: Progress, onEval: () -> Unit) {
-    val ready = genreDone(genre, p)
     val best = p.evalBest[genre.id]
+    // Thème déjà validé : l'avant-première reste ouverte, même avec les nouvelles scènes à tourner.
+    val ready = genreDone(genre, p) || (best ?: -1) >= EVAL_PASS
     val shape = RoundedCornerShape(16.dp)
     Column(
         Modifier

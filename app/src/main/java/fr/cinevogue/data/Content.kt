@@ -44,12 +44,8 @@ fun genresFor(level: Level): List<Genre> = if (level == Level.AVANCE) ADVANCED e
 /** Thèmes et films, tous niveaux confondus. */
 val ALL_GENRES: List<Genre> get() = BEGINNER + ADVANCED + FILMS_BEGINNER + FILMS_ADVANCED
 
-internal fun l(speaker: String, en: String, fr: String, gloss: String) = Line(speaker, en, fr, gloss)
-internal fun b(speaker: String, en: String, fr: String, gloss: String, blank: String, why: String, vararg decoys: String) =
-    Line(speaker, en, fr, gloss, blank, why, decoys.toList())
-internal fun w(en: String, fr: String) = Word(en, fr)
 
-val BEGINNER: List<Genre> = listOf(
+private val BEGINNER_BASE: List<Genre> = listOf(
     Genre(
         "g1", "Comédie au lycée", "Se présenter, l'école, la famille, les goûts",
         listOf(
@@ -416,3 +412,6 @@ val BEGINNER: List<Genre> = listOf(
         ),
     ),
 )
+
+/** Thèmes complets : scènes d'origine + scènes ajoutées en v1.4. */
+val BEGINNER: List<Genre> = withMoreScenes(BEGINNER_BASE)

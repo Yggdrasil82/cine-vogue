@@ -4,7 +4,7 @@ package fr.cinevogue.data
  * Films du niveau avancé. Répliques originales écrites pour l'appli,
  * dans l'univers de chaque film ou série (aucune réplique réelle n'est reprise).
  */
-val FILMS_ADVANCED: List<Genre> = listOf(
+private val FILMS_ADVANCED_BASE: List<Genre> = listOf(
     Genre(
         "f12", "La Chronique des Bridgerton", "La haute société londonienne de 1813",
         listOf(
@@ -318,6 +318,9 @@ val FILMS_ADVANCED: List<Genre> = listOf(
         ),
     ),
 )
+
+/** Thèmes complets : scènes d'origine + scènes ajoutées en v1.4. */
+val FILMS_ADVANCED: List<Genre> = withMoreScenes(FILMS_ADVANCED_BASE)
 
 /** Tous les films, avec leur niveau. */
 val FILMS: List<Pair<Level, Genre>> =

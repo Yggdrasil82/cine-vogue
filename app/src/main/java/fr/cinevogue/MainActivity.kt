@@ -13,6 +13,22 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import fr.cinevogue.ai.Judgement
+import fr.cinevogue.data.Level
+import fr.cinevogue.data.Mode
+import fr.cinevogue.data.TextCheck
+import fr.cinevogue.data.TextResult
+import fr.cinevogue.data.reshuffled
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,6 +70,7 @@ import fr.cinevogue.data.Game
 import fr.cinevogue.data.Question
 import fr.cinevogue.data.finishEval
 import fr.cinevogue.data.genreDone
+import fr.cinevogue.data.evalPassed
 import fr.cinevogue.data.score20
 import fr.cinevogue.data.MyLine
 import fr.cinevogue.data.Tip
@@ -137,6 +154,7 @@ private sealed interface Route {
     data class GenreRoute(val id: String) : Route
     data class Play(val sceneId: String) : Route
     data class Result(val ui: ResultUi, val nextSceneId: String?) : Route
+    data class Rushes(val sceneId: String, val then: Result) : Route
     data object Voices : Route
     data object LineForm : Route
     data class Eval(val genreId: String) : Route
@@ -173,6 +191,8 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
         aiTip = if (aiKey.isBlank()) null else { w, sentence, heard -> Mistral.pronunciationTip(aiKey, aiModel, w, sentence, heard) },
     )
     repeatTarget?.let { t -> RepeatDialog(t, tools) { repeatTarget = null } }
+    val judge: (suspend (Question, String) -> Judgement)? =
+        if (aiKey.isBlank()) null else { q, text -> Mistral.judgeTranslation(aiKey, aiModel, q.text, q.expected.orEmpty(), text) }
 
     fun open(p: Profile) {
         currentId = p.id
@@ -365,12 +385,12 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
             val pool = genres + filmsOfLevel(prof.level)
             val reminder = if (settings.reminderOn) "Prochain tournage demain à ${formatTime(settings.reminderHour, settings.reminderMinute)}" else null
 
-            fun finish(sceneId: String, title: String, correct: List<String>, wrong: List<String>, words: List<Word>, tip: Tip, next: (Progress) -> String?) {
+            fun finish(sceneId: String, title: String, correct: List<String>, wrong: List<String>, words: List<Word>, tip: Tip, rushes: Boolean = false, next: (Progress) -> String?) {
                 val before = rankFor(progress.points)
                 val (updated, stars) = finishScene(progress, sceneId, correct, wrong, today())
                 saveProgress(updated)
                 val after = rankFor(updated.points)
-                route = Route.Result(
+                val result = Route.Result(
                     ResultUi(
                         sceneTitle = title,
                         correct = correct.size,
@@ -384,6 +404,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                     ),
                     next(updated),
                 )
+                route = if (rushes) Route.Rushes(sceneId, result) else result
             }
 
             if (r.sceneId == Studio.MY_SCENE) {
@@ -423,11 +444,12 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                         profile = prof,
                         narrator = narrator,
                         tools = tools,
+                        judge = judge,
                         onQuit = { route = Route.Main(Tab.PLATEAU) },
                         onFinish = { answers ->
                             val (correct, wrong) = split(answers)
                             val isFilm = FILMS.any { it.second.id == genre.id }
-                            finish(scene.id, scene.title, correct, wrong, scene.words, scene.tip) { updated ->
+                            finish(scene.id, scene.title, correct, wrong, scene.words, scene.tip, rushes = true) { updated ->
                                 if (isFilm) {
                                     // Scène suivante du même film, s'il y en a une.
                                     genre.scenes.getOrNull(genre.scenes.indexOf(scene) + 1)?.id
@@ -445,7 +467,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
             val prof = current!!
             val genres = genresFor(prof.level)
             val genre = genres.firstOrNull { it.id == r.genreId }
-            if (genre == null || !genreDone(genre, progress)) {
+            if (genre == null || !(genreDone(genre, progress) || evalPassed(progress, genre))) {
                 LaunchedEffect(r) { route = Route.Main(Tab.PLATEAU) }
             } else {
                 SceneHost(
@@ -457,6 +479,7 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                     narrator = narrator,
                     tools = tools,
                     exam = true,
+                    judge = judge,
                     onQuit = { route = Route.GenreRoute(genre.id) },
                     onFinish = { answers ->
                         val (correct, wrong) = split(answers)
@@ -464,8 +487,8 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                         val updated = finishEval(progress, genre.id, correct, wrong, today())
                         saveProgress(updated)
                         val after = rankFor(updated.points)
-                        val wrongTips = answers.filter { (q, sel) -> sel != q.answer }.mapNotNull { Studio.tipOf(it.first) }.distinct()
-                        val allTips = answers.mapNotNull { Studio.tipOf(it.first) }.distinct()
+                        val wrongTips = answers.filter { !it.ok }.mapNotNull { Studio.tipOf(it.q) }.distinct()
+                        val allTips = answers.mapNotNull { Studio.tipOf(it.q) }.distinct()
                         val idx = genres.indexOf(genre)
                         val next = genres.getOrNull(idx + 1)
                         route = Route.EvalResult(
@@ -478,11 +501,18 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                                 nextTitle = next?.title,
                                 mastered = (allTips - wrongTips.toSet()).map { it.title },
                                 toReview = wrongTips,
-                                mistakes = answers.filter { (q, sel) -> sel != q.answer }.map { (q, sel) ->
+                                mistakes = answers.filter { !it.ok }.map { g ->
+                                    val q = g.q
                                     Mistake(
-                                        prompt = if (q.game == Game.CLAP) "Que veut dire « ${q.text} » ?" else "« ${q.text} »",
-                                        yours = sel?.let { q.options[it] } ?: "pas de réponse",
-                                        right = q.options[q.answer],
+                                        prompt = when (q.game) {
+                                            Game.CLAP -> "Que veut dire « ${q.text} » ?"
+                                            Game.SOUSTITRAGE -> "En anglais : « ${q.text} »"
+                                            Game.MONTAGE -> "Remettre dans l'ordre : « ${q.text} »"
+                                            Game.CASTING -> "À l'écoute : « ${q.text} »"
+                                            else -> "« ${q.text} »"
+                                        },
+                                        yours = if (q.isText) g.text.ifBlank { "pas de réponse" } else g.sel?.let { q.options[it] } ?: "pas de réponse",
+                                        right = if (q.isText) q.expected.orEmpty() else q.options[q.answer],
                                         explain = q.why ?: q.translation,
                                     )
                                 },
@@ -628,6 +658,38 @@ private fun CineApp(repo: ProfileRepo, narrator: Narrator) {
                 onRetry = { route = Route.Eval(r.genreId) },
                 onHome = { route = Route.Main(Tab.PLATEAU) },
             )
+        }
+
+        is Route.Rushes -> {
+            val prof = current!!
+            val found = Studio.find(r.sceneId)
+            if (found == null) {
+                LaunchedEffect(r) { route = r.then }
+            } else {
+                val (genre, scene) = found
+                SceneHost(
+                    key = "rushes-" + scene.id + "-" + System.identityHashCode(r),
+                    build = { rnd -> Studio.rushes(genre, scene, rnd) },
+                    header = "Les rushes",
+                    subtitle = scene.title,
+                    profile = prof,
+                    narrator = narrator,
+                    tools = tools,
+                    requeue = true,
+                    onQuit = { route = r.then },
+                    onFinish = { answers ->
+                        // Un mot raté du premier coup revient en « Prise 2 » dans les prochaines scènes.
+                        val firstTry = answers.groupBy { it.q.id }.mapValues { it.value.first().ok }
+                        val missedWords = firstTry.filter { !it.value }.keys
+                        val wordCount = firstTry.size
+                        val toReview = missedWords.filter { it.startsWith(scene.id + "-c") }
+                        if (toReview.isNotEmpty()) saveProgress(progress.copy(missed = progress.missed + toReview))
+                        val line = if (missedWords.isEmpty()) "Les rushes : $wordCount mots sur $wordCount du premier coup !"
+                        else "Les rushes : ${wordCount - missedWords.size} mots sur $wordCount du premier coup. Les autres reviendront en « Prise 2 »."
+                        route = r.then.copy(ui = r.then.ui.copy(rushes = line))
+                    },
+                )
+            }
         }
 
         is Route.Result -> {
@@ -784,10 +846,12 @@ private fun AiHost(
 private fun sampleLine(p: Profile): String =
     "Hello ${p.name}! Welcome to Ciné Vogue. Are you ready for your next scene?"
 
+/** Une réponse donnée : le choix ou le texte écrit, et si elle est juste. */
+private data class Given(val q: Question, val sel: Int?, val text: String, val ok: Boolean, val typo: Boolean = false)
+
 /** Sépare les identifiants des questions réussies et ratées. */
-private fun split(answers: List<Pair<Question, Int?>>): Pair<List<String>, List<String>> =
-    answers.filter { it.second == it.first.answer }.map { it.first.id } to
-        answers.filter { it.second != it.first.answer }.map { it.first.id }
+private fun split(answers: List<Given>): Pair<List<String>, List<String>> =
+    answers.filter { it.ok }.map { it.q.id } to answers.filter { !it.ok }.map { it.q.id }
 
 private val MY_TIP = Tip(
     "Ton carnet de répliques",
@@ -804,26 +868,83 @@ private fun SceneHost(
     narrator: Narrator,
     tools: RepeatTools,
     exam: Boolean = false,
+    /** Rushes : une question ratée revient plus loin (2 fois au plus). */
+    requeue: Boolean = false,
+    /** Vérification par l'IA d'une autre traduction (null sans clé). */
+    judge: (suspend (Question, String) -> Judgement)? = null,
     onQuit: () -> Unit,
-    onFinish: (List<Pair<Question, Int?>>) -> Unit,
+    onFinish: (List<Given>) -> Unit,
 ) {
     var repeat by remember(key) { mutableStateOf<String?>(null) }
     repeat?.let { t -> RepeatDialog(t, tools) { repeat = null } }
-    val questions = remember(key) { build(Random(System.nanoTime())) }
+    val rnd = remember(key) { Random(System.nanoTime()) }
+    val questions = remember(key) { mutableStateListOf<Question>().apply { addAll(build(rnd)) } }
     var index by remember(key) { mutableIntStateOf(0) }
     var selected by remember(key) { mutableStateOf<Int?>(null) }
     var checked by remember(key) { mutableStateOf(false) }
     var eliminated by remember(key) { mutableStateOf(setOf<Int>()) }
     var seconds by remember(key) { mutableIntStateOf(10) }
-    val answers = remember(key) { mutableStateListOf<Pair<Question, Int?>>() }
+    var typed by remember(key) { mutableStateOf("") }
+    var chosen by remember(key) { mutableStateOf(listOf<Int>()) }
+    var helpOn by remember(key) { mutableStateOf(false) }
+    var result by remember(key) { mutableStateOf<TextResult?>(null) }
+    var aiChecking by remember(key) { mutableStateOf(false) }
+    var aiNote by remember(key) { mutableStateOf<String?>(null) }
+    var aiAccepted by remember(key) { mutableStateOf(false) }
+    var busy by remember(key) { mutableStateOf(false) }
+    val answers = remember(key) { mutableStateListOf<Given>() }
+    val scope = rememberCoroutineScope()
 
     val q = questions[index]
     val say = { text: String, slow: Boolean -> narrator.speak(text, slow, profile.voice) }
 
+    fun answerText(): String =
+        if (q.mode == Mode.TILES || (q.mode == Mode.TYPE && helpOn)) chosen.mapNotNull { q.tiles.getOrNull(it) }.joinToString(" ") else typed
+
+    /** Corrige la réponse en cours et l'enregistre. */
+    fun record(): Given {
+        val text = answerText()
+        val given = if (q.isText) {
+            val r = TextCheck.check(text, q.expected.orEmpty())
+            result = r
+            Given(q, null, text, r.ok, r.typos.isNotEmpty())
+        } else {
+            Given(q, selected, "", selected == q.answer)
+        }
+        answers.add(given)
+        if (requeue && !given.ok && questions.count { it.id == q.id } < 3) {
+            questions.add(q.reshuffled(rnd))
+        }
+        return given
+    }
+
     fun check() {
         if (checked) return
         checked = true
-        answers.add(q to selected)
+        record()
+    }
+
+    fun finish() {
+        val list = answers.toList()
+        val toJudge = if (exam && judge != null) list.withIndex().filter { (_, g) -> !g.ok && g.q.game == Game.SOUSTITRAGE && g.text.isNotBlank() } else emptyList()
+        if (toJudge.isEmpty()) {
+            onFinish(list)
+            return
+        }
+        val j = judge ?: return onFinish(list)
+        busy = true
+        scope.launch {
+            val out = list.toMutableList()
+            for ((i, g) in toJudge) {
+                try {
+                    if (j(g.q, g.text).correct) out[i] = g.copy(ok = true)
+                } catch (e: AiError) {
+                    // Sans réponse de l'IA, on garde la correction de l'appli.
+                }
+            }
+            busy = false
+            onFinish(out)
+        }
     }
 
     fun next() {
@@ -832,8 +953,15 @@ private fun SceneHost(
             selected = null
             checked = false
             eliminated = emptySet()
+            typed = ""
+            chosen = emptyList()
+            helpOn = false
+            result = null
+            aiChecking = false
+            aiNote = null
+            aiAccepted = false
         } else {
-            onFinish(answers.toList())
+            finish()
         }
     }
 
@@ -841,7 +969,7 @@ private fun SceneHost(
 
     LaunchedEffect(key, index) {
         seconds = 10
-        if (q.game == Game.CASTING) {
+        if (q.game == Game.CASTING || q.kind == "listen") {
             delay(500)
             q.audio?.let { say(it, false) }
         }
@@ -857,6 +985,19 @@ private fun SceneHost(
         }
     }
 
+    if (busy) {
+        Column(
+            Modifier.fillMaxSize().background(Cv.Bg).padding(32.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            CircularProgressIndicator(color = Cv.Gold)
+            Spacer(Modifier.height(18.dp))
+            Text("Le jury relit tes sous-titres…", fontSize = 17.sp, color = Cv.Cream)
+        }
+        return
+    }
+
     SceneScreen(
         ui = QuestionUi(
             q = q,
@@ -870,29 +1011,80 @@ private fun SceneHost(
             genreTitle = subtitle,
             feminine = profile.gender == Gender.FILLE,
             exam = exam,
+            typed = typed,
+            chosen = chosen,
+            result = result,
+            helpAllowed = profile.level == Level.DEBUTANT,
+            helpOn = helpOn,
+            aiAvailable = judge != null,
+            aiChecking = aiChecking,
+            aiNote = aiNote,
+            aiAccepted = aiAccepted,
+            requeue = requeue,
         ),
         onSelect = { if (!checked && it !in eliminated) selected = it },
         onAction = {
+            val ready = if (q.isText) answerText().isNotBlank() else selected != null
             if (exam) {
                 // Avant-première : on enregistre et on passe à la suite, sans correction.
-                if (selected != null) {
-                    answers.add(q to selected)
+                if (ready) {
+                    record()
                     next()
                 }
             } else if (!checked) {
-                if (selected != null) check()
+                if (ready) check()
             } else {
                 next()
             }
         },
         onHint = {
             if (!checked && eliminated.isEmpty()) {
-                val wrongOptions = q.options.indices.filter { it != q.answer && it != selected }
-                if (wrongOptions.isNotEmpty()) eliminated = setOf(wrongOptions.random())
+                if (q.isText) {
+                    // Indice : le premier mot est donné.
+                    val first = TextCheck.tiles(q.expected.orEmpty()).firstOrNull()
+                    if (first != null) {
+                        if (q.mode == Mode.TILES || helpOn) {
+                            val i = q.tiles.indexOfFirst { it == first }
+                            if (i >= 0) chosen = listOf(i)
+                        } else {
+                            typed = "$first "
+                        }
+                        eliminated = setOf(-1)
+                    }
+                } else {
+                    val wrongOptions = q.options.indices.filter { it != q.answer && it != selected }
+                    if (wrongOptions.isNotEmpty()) eliminated = setOf(wrongOptions.random())
+                }
             }
         },
         onListen = { slow -> q.audio?.let { say(it, slow) } },
         onQuit = onQuit,
         onRepeat = { repeat = it },
+        onType = { if (!checked) typed = it },
+        onTile = { i -> if (!checked && i !in chosen) chosen = chosen + i },
+        onUntile = { pos -> if (!checked) chosen = chosen.filterIndexed { p, _ -> p != pos } },
+        onHelp = { if (!checked) { helpOn = true; chosen = emptyList() } },
+        onAiCheck = {
+            val j = judge
+            val text = answers.lastOrNull()?.text.orEmpty()
+            if (j != null && !aiChecking && text.isNotBlank()) {
+                aiChecking = true
+                scope.launch {
+                    try {
+                        val verdict = j(q, text)
+                        aiNote = verdict.noteFr.ifBlank { if (verdict.correct) "Ta traduction est correcte." else "Ta traduction ne convient pas tout à fait." }
+                        if (verdict.correct) {
+                            aiAccepted = true
+                            val last = answers.lastIndex
+                            if (last >= 0 && answers[last].q.id == q.id) answers[last] = answers[last].copy(ok = true)
+                        }
+                    } catch (e: AiError) {
+                        aiNote = e.messageFr
+                    } finally {
+                        aiChecking = false
+                    }
+                }
+            }
+        },
     )
 }

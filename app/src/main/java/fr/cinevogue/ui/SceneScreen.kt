@@ -1,6 +1,18 @@
 package fr.cinevogue.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.withStyle
+import fr.cinevogue.data.Mode
+import fr.cinevogue.data.TextResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -61,7 +73,29 @@ data class QuestionUi(
     val feminine: Boolean = true,
     /** Avant-première : pas d'indice, pas de correction avant la fin. */
     val exam: Boolean = false,
-)
+    /** Réponse écrite (sous-titrage, rushes). */
+    val typed: String = "",
+    /** Étiquettes choisies, dans l'ordre (indices dans q.tiles). */
+    val chosen: List<Int> = emptyList(),
+    /** Correction d'une réponse écrite ou d'un montage. */
+    val result: TextResult? = null,
+    /** L'aide « mots en désordre » est proposée (niveau débutant). */
+    val helpAllowed: Boolean = false,
+    /** L'aide « mots en désordre » est activée pour cette question. */
+    val helpOn: Boolean = false,
+    /** Une clé d'IA est enregistrée : on peut faire vérifier une autre traduction. */
+    val aiAvailable: Boolean = false,
+    val aiChecking: Boolean = false,
+    val aiNote: String? = null,
+    val aiAccepted: Boolean = false,
+    /** Rushes : un mot raté revient tout de suite. */
+    val requeue: Boolean = false,
+) {
+    val tilesMode: Boolean get() = q.mode == Mode.TILES || (q.mode == Mode.TYPE && helpOn)
+    val answerText: String get() = if (tilesMode) chosen.mapNotNull { q.tiles.getOrNull(it) }.joinToString(" ") else typed
+    val correct: Boolean get() = if (q.isText) (result?.ok == true || aiAccepted) else selected == q.answer
+    val ready: Boolean get() = if (q.isText) answerText.isNotBlank() else selected != null
+}
 
 private val PRAISES_F = listOf("Bien joué !", "Parfait !", "Une vraie pro !", "Magnifique !", "Dans la boîte !", "Superbe prise !")
 private val PRAISES_M = listOf("Bien joué !", "Parfait !", "Un vrai pro !", "Magnifique !", "Dans la boîte !", "Superbe prise !")
@@ -76,6 +110,11 @@ fun SceneScreen(
     onListen: (Boolean) -> Unit,
     onQuit: () -> Unit,
     onRepeat: (String) -> Unit = {},
+    onType: (String) -> Unit = {},
+    onTile: (Int) -> Unit = {},
+    onUntile: (Int) -> Unit = {},
+    onHelp: () -> Unit = {},
+    onAiCheck: () -> Unit = {},
 ) {
     val q = ui.q
     Column(Modifier.fillMaxSize().background(Cv.Bg)) {
@@ -88,7 +127,7 @@ fun SceneScreen(
                     Icon(Icons.Filled.Close, contentDescription = "Quitter la scène", tint = Cv.Cream)
                 }
                 Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("${ui.header} · ${q.game.label}", fontFamily = Bebas, fontSize = 22.sp, letterSpacing = 2.sp, color = Cv.Gold)
+                    Text(if (q.game == Game.RUSHES) ui.header else "${ui.header} · ${q.game.label}", fontFamily = Bebas, fontSize = 22.sp, letterSpacing = 2.sp, color = Cv.Gold)
                     Text(ui.genreTitle, fontSize = 12.sp, color = Cv.Muted)
                 }
                 Text(
@@ -122,11 +161,15 @@ fun SceneScreen(
         ) {
             Stage(ui, onListen)
             Text(instruction(q), fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.padding(top = 6.dp))
-            q.options.forEachIndexed { i, option ->
-                OptionRow(option, i, ui, onSelect)
+            if (q.isText) {
+                TextAnswer(ui, onType, onTile, onUntile, onHelp)
+            } else {
+                q.options.forEachIndexed { i, option ->
+                    OptionRow(option, i, ui, onSelect)
+                }
             }
             if (ui.checked) {
-                Box(Modifier.bringIntoViewRequester(feedback)) { Feedback(ui, onRepeat) }
+                Box(Modifier.bringIntoViewRequester(feedback)) { Feedback(ui, onRepeat, onAiCheck) }
             }
             Spacer(Modifier.height(8.dp))
         }
@@ -153,18 +196,21 @@ fun SceneScreen(
                     else -> "Suivant"
                 },
                 onClick = onAction,
-                enabled = ui.checked || ui.selected != null,
+                enabled = ui.checked || ui.ready,
                 modifier = Modifier.weight(1f).height(56.dp),
             )
         }
     }
 }
 
-private fun instruction(q: Question): String = when (q.game) {
+private fun instruction(q: Question): String = q.instruction ?: when (q.game) {
     Game.DOUBLAGE -> "Double ${q.speaker ?: "la réplique"} en français :"
     Game.SCRIPT -> "Complète le script :"
     Game.CASTING -> "Quelle réplique as-tu entendue ?"
     Game.CLAP -> "Vite ! Que veut dire ce mot ?"
+    Game.SOUSTITRAGE -> "Écris cette réplique en anglais :"
+    Game.MONTAGE -> "Remets les mots dans l'ordre :"
+    Game.RUSHES -> "Révise les mots de la scène :"
 }
 
 @Composable
@@ -219,6 +265,40 @@ private fun Stage(ui: QuestionUi, onListen: (Boolean) -> Unit) {
                 }
                 Text("Écoute bien la réplique…", color = Cv.Muted)
                 ListenButtons(onListen)
+            }
+            Game.SOUSTITRAGE, Game.MONTAGE -> {
+                q.speaker?.let { name ->
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SpeakerAvatar(name)
+                        Text(name, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Text(
+                    "« ${q.text} »",
+                    fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Color.White,
+                    textAlign = TextAlign.Center, lineHeight = 29.sp,
+                )
+                Text(if (q.game == Game.MONTAGE) "Le monteur a mélangé la réplique anglaise." else "Version française · à sous-titrer en anglais", fontSize = 13.sp, fontStyle = FontStyle.Italic, color = Cv.Muted, textAlign = TextAlign.Center)
+                if (ui.checked) ListenButtons(onListen)
+            }
+            Game.RUSHES -> {
+                if (q.kind == "listen") {
+                    Box(
+                        Modifier
+                            .size(84.dp)
+                            .clip(CircleShape)
+                            .background(Cv.Header)
+                            .border(3.dp, Cv.Gold, CircleShape)
+                            .clickable { onListen(false) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(Icons.Filled.PlayArrow, contentDescription = "Écouter le mot", tint = Cv.Gold, modifier = Modifier.size(48.dp))
+                    }
+                    if (ui.checked) Text(q.audio.orEmpty(), fontFamily = Bebas, fontSize = 40.sp, letterSpacing = 2.sp, color = Cv.Gold, textAlign = TextAlign.Center)
+                } else {
+                    Text(q.text, fontFamily = Bebas, fontSize = if (q.text.length > 16) 36.sp else 48.sp, letterSpacing = 2.sp, color = Cv.Gold, textAlign = TextAlign.Center, lineHeight = 44.sp)
+                    if (q.kind == "enfr" || ui.checked) LineButton("Écouter", onClick = { onListen(false) }, color = Cv.Gold, border = Cv.Gold)
+                }
             }
             Game.CLAP -> {
                 val s = ui.secondsLeft
@@ -282,13 +362,16 @@ private fun OptionRow(text: String, i: Int, ui: QuestionUi, onSelect: (Int) -> U
 }
 
 @Composable
-private fun Feedback(ui: QuestionUi, onRepeat: (String) -> Unit) {
+private fun Feedback(ui: QuestionUi, onRepeat: (String) -> Unit, onAiCheck: () -> Unit) {
     val q = ui.q
-    val ok = ui.selected == q.answer
+    val ok = ui.correct
     val praises = if (ui.feminine) PRAISES_F else PRAISES_M
+    val typos = ui.result?.typos.orEmpty()
     val title = when {
+        ui.aiAccepted -> "Ta version est juste aussi !"
+        ok && typos.isNotEmpty() -> "Juste, à une lettre près !"
         ok -> praises[Math.floorMod(q.id.hashCode(), praises.size)]
-        ui.selected == null -> "Temps écoulé !"
+        !q.isText && ui.selected == null -> "Temps écoulé !"
         else -> "Presque !"
     }
     val wrongNote = ui.selected?.let { q.optionNotes.getOrNull(it) }
@@ -301,17 +384,135 @@ private fun Feedback(ui: QuestionUi, onRepeat: (String) -> Unit) {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(title, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = if (ok) Cv.Good else Cv.Bad)
-        if (!ok) {
+        if (q.isText) {
+            if (typos.isNotEmpty()) {
+                FeedbackPart("Attention à l'orthographe", typos.joinToString("\n") { (t, e) -> "Tu as écrit « $t » : on écrit « $e »." })
+            }
+            if (!ok || ui.aiAccepted) {
+                FeedbackPart("Ta réponse", ui.answerText.ifBlank { "pas de réponse" })
+                val words = ui.result?.words.orEmpty()
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text((if (ui.aiAccepted) "La version du script" else "La bonne réponse").uppercase(), fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp, color = Cv.Gold)
+                    Text(
+                        buildAnnotatedString {
+                            if (words.isEmpty()) append(q.expected.orEmpty())
+                            words.forEachIndexed { i, w ->
+                                if (i > 0) append(" ")
+                                withStyle(SpanStyle(color = if (w.ok || ui.aiAccepted) Cv.Cream else Cv.Bad, fontWeight = if (w.ok) FontWeight.Normal else FontWeight.Bold)) { append(w.word) }
+                            }
+                        },
+                        fontSize = 16.sp, lineHeight = 22.sp,
+                    )
+                    if (!ok && words.any { !it.ok }) Text("En rouge : les mots qui manquent ou qui sont différents.", fontSize = 12.sp, color = Cv.Muted)
+                }
+            }
+            ui.aiNote?.let { FeedbackPart("L'avis de l'IA", it) }
+            if (!ok && q.game == Game.SOUSTITRAGE && !ui.helpOn && ui.aiAvailable && ui.aiNote == null) {
+                LineButton(
+                    if (ui.aiChecking) "L'IA vérifie ta traduction…" else "Ma traduction est peut-être juste aussi : demander à l'IA",
+                    onClick = onAiCheck, enabled = !ui.aiChecking, color = Cv.Gold, border = Cv.Gold, modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        } else if (!ok) {
             FeedbackPart("La bonne réponse", q.options[q.answer])
             if (wrongNote != null) FeedbackPart("Ton choix", wrongNote)
         }
         q.why?.let { FeedbackPart(if (ok) "Pourquoi c'est juste" else "Pourquoi", it) }
         FeedbackPart("Traduction", q.translation)
         q.gloss?.let { FeedbackPart("Les mots", it.replace(" · ", "\n")) }
-        if (!ok) Text("Pas de souci : cette réplique reviendra dans une prochaine scène.", fontSize = 13.sp, color = Cv.Muted)
+        if (!ok) {
+            Text(
+                if (ui.requeue) "Pas de souci : ce mot revient dans un instant." else "Pas de souci : cette réplique reviendra dans une prochaine scène.",
+                fontSize = 13.sp, color = Cv.Muted,
+            )
+        }
         q.audio?.let { sentence ->
             LineButton("Répète après moi", onClick = { onRepeat(sentence) }, color = Cv.Gold, border = Cv.Gold, modifier = Modifier.fillMaxWidth())
         }
+    }
+}
+
+/** Réponse écrite au clavier, ou avec des étiquettes à remettre dans l'ordre. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TextAnswer(ui: QuestionUi, onType: (String) -> Unit, onTile: (Int) -> Unit, onUntile: (Int) -> Unit, onHelp: () -> Unit) {
+    val q = ui.q
+    if (ui.tilesMode) {
+        val shape = RoundedCornerShape(14.dp)
+        val border = when {
+            ui.checked && ui.correct -> Cv.Good
+            ui.checked -> Cv.Bad
+            else -> Cv.Gold
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 64.dp)
+                .clip(shape)
+                .background(Cv.Locked)
+                .border(2.dp, border, shape)
+                .padding(10.dp),
+        ) {
+            if (ui.chosen.isEmpty()) {
+                Text("Touche les mots dans l'ordre…", color = Cv.Dim, fontSize = 15.sp, modifier = Modifier.padding(6.dp))
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ui.chosen.forEachIndexed { pos, i ->
+                    Tile(q.tiles.getOrNull(i).orEmpty(), selected = true, enabled = !ui.checked) { onUntile(pos) }
+                }
+            }
+        }
+        if (!ui.checked) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                q.tiles.forEachIndexed { i, word ->
+                    if (i !in ui.chosen) Tile(word, selected = false, enabled = true) { onTile(i) }
+                }
+            }
+            if (q.mode == Mode.TYPE) Text("Attention : deux mots en trop se sont glissés dans la liste.", fontSize = 12.sp, color = Cv.Muted)
+        }
+    } else {
+        OutlinedTextField(
+            value = ui.typed,
+            onValueChange = onType,
+            enabled = !ui.checked,
+            label = { Text(if (q.game == Game.RUSHES) "Le mot en anglais" else "Ta réplique en anglais") },
+            keyboardOptions = KeyboardOptions(
+                capitalization = if (q.game == Game.RUSHES) KeyboardCapitalization.None else KeyboardCapitalization.Sentences,
+                autoCorrect = false,
+                imeAction = ImeAction.Done,
+            ),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Cv.Gold,
+                unfocusedBorderColor = Cv.Line,
+                disabledBorderColor = if (ui.correct) Cv.Good else Cv.Bad,
+                focusedLabelColor = Cv.Gold,
+                unfocusedLabelColor = Cv.Muted,
+                disabledLabelColor = Cv.Muted,
+                cursorColor = Cv.Gold,
+                focusedTextColor = Cv.Cream,
+                unfocusedTextColor = Cv.Cream,
+                disabledTextColor = Cv.Cream,
+            ),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (ui.helpAllowed && !ui.exam && !ui.checked && q.game == Game.SOUSTITRAGE && q.tiles.isNotEmpty()) {
+            LineButton("Aide : mots en désordre", onClick = onHelp, color = Cv.Gold, border = Cv.Gold, modifier = Modifier.fillMaxWidth())
+        }
+    }
+}
+
+@Composable
+private fun Tile(word: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val shape = RoundedCornerShape(10.dp)
+    Box(
+        Modifier
+            .clip(shape)
+            .background(if (selected) Cv.Selected else Cv.Card)
+            .border(2.dp, if (selected) Cv.Gold else Cv.Line, shape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Text(word, fontSize = 16.sp, fontWeight = FontWeight.Bold)
     }
 }
 

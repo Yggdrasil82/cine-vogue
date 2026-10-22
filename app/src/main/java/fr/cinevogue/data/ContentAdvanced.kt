@@ -1,7 +1,7 @@
 package fr.cinevogue.data
 
 /** Niveau avancé : B1+ → C1. Même structure que le niveau débutant. */
-val ADVANCED: List<Genre> = listOf(
+private val ADVANCED_BASE: List<Genre> = listOf(
     Genre(
         "a1", "Drame à la fac", "Études, entretiens, parler de son parcours",
         listOf(
@@ -368,3 +368,6 @@ val ADVANCED: List<Genre> = listOf(
         ),
     ),
 )
+
+/** Thèmes complets : scènes d'origine + scènes ajoutées en v1.4. */
+val ADVANCED: List<Genre> = withMoreScenes(ADVANCED_BASE)

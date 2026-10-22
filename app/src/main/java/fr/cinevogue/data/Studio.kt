@@ -7,7 +7,13 @@ enum class Game(val label: String) {
     SCRIPT("Le script troué"),
     CASTING("Le casting"),
     CLAP("Clap de fin"),
+    SOUSTITRAGE("Le sous-titrage"),
+    MONTAGE("Le montage"),
+    RUSHES("Les rushes"),
 }
+
+/** Comment on répond : choisir, écrire, ou remettre des étiquettes dans l'ordre. */
+enum class Mode { CHOICE, TYPE, TILES }
 
 data class Question(
     val id: String,
@@ -30,7 +36,20 @@ data class Question(
     /** Ce que veut dire chaque mauvaise réponse, si elle est choisie. */
     val optionNotes: List<String?>,
     val retake: Boolean = false,
-)
+    val mode: Mode = Mode.CHOICE,
+    /** Phrase anglaise attendue (écrire ou montage). */
+    val expected: String? = null,
+    /** Étiquettes : mots mélangés du montage, ou aide « mots en désordre » du sous-titrage. */
+    val tiles: List<String> = emptyList(),
+    /** Consigne propre à la question (rushes). */
+    val instruction: String? = null,
+    /** Règle à revoir (phrases de l'avant-première). */
+    val tip: Tip? = null,
+    /** Rushes : « enfr », « fren », « listen » ou « write ». */
+    val kind: String? = null,
+) {
+    val isText: Boolean get() = mode != Mode.CHOICE
+}
 
 /** Fabrique les questions de chaque scène. */
 object Studio {
@@ -97,6 +116,8 @@ object Studio {
                 optionNotes = opts.map { o -> if (o == line.en) null else frOfEn[o]?.let { "Tu as choisi « $o », qui veut dire « $it »." } },
             )
         }
+        out += montage("${scene.id}-m0", scene.lines[0], rnd)
+        out += subtitling("${scene.id}-t2", scene.lines[2], lines, rnd)
         scene.words.forEachIndexed { i, word ->
             val (opts, ans) = pick(word.fr, words.map { it.fr }, rnd)
             out += Question(
@@ -109,7 +130,75 @@ object Studio {
         return out
     }
 
+    /** Montage : remettre dans l'ordre les mots d'une réplique. */
+    private fun montage(id: String, line: Line, rnd: Random, tip: Tip? = null): Question {
+        val words = TextCheck.tiles(line.en)
+        var shuffled = words.shuffled(rnd)
+        var tries = 0
+        while (words.size > 1 && shuffled == words && tries++ < 8) shuffled = words.shuffled(rnd)
+        return Question(
+            id = id, game = Game.MONTAGE, speaker = line.speaker.ifBlank { null },
+            text = line.fr, subtitle = null, audio = line.en, options = emptyList(), answer = -1,
+            translation = full(line), gloss = line.gloss.ifBlank { null }, why = null, optionNotes = emptyList(),
+            mode = Mode.TILES, expected = line.en, tiles = shuffled, tip = tip,
+        )
+    }
+
+    /** Sous-titrage : écrire en anglais une réplique donnée en français. */
+    private fun subtitling(id: String, line: Line, others: List<Line>, rnd: Random, tip: Tip? = null): Question {
+        val words = TextCheck.tiles(line.en)
+        val lower = words.map { it.lowercase() }.toSet()
+        val decoys = others.flatMap { TextCheck.tiles(it.en) }
+            .filter { it.lowercase() !in lower && it.length > 1 }
+            .distinct().shuffled(rnd).take(2)
+        return Question(
+            id = id, game = Game.SOUSTITRAGE, speaker = line.speaker.ifBlank { null },
+            text = line.fr, subtitle = null, audio = line.en, options = emptyList(), answer = -1,
+            translation = full(line), gloss = line.gloss.ifBlank { null }, why = line.why, optionNotes = emptyList(),
+            mode = Mode.TYPE, expected = line.en, tiles = (words + decoys).shuffled(rnd), tip = tip,
+        )
+    }
+
+    private val BANK_ID = Regex("^(.+)-e(\\d+)-([sdktm])$")
+
+    /** Question de l'avant-première à partir d'une phrase de la banque. */
+    private fun bankQuestion(genre: Genre, index: Int, code: Char, rnd: Random): Question? {
+        val bank = EVAL_BANK[genre.id] ?: return null
+        val item = bank.getOrNull(index) ?: return null
+        val line = item.line
+        val tip = genre.scenes.getOrNull(item.scene)?.tip
+        val id = "${genre.id}-e$index-$code"
+        val others = bank.map { it.line }
+        val enOfFr = others.associate { it.fr to it.en }
+        val frOfEn = others.associate { it.en to it.fr }
+        val gloss = line.gloss.ifBlank { null }
+        return when (code) {
+            's' -> {
+                val blank = line.blank ?: return null
+                val (opts, ans) = pick(blank, line.decoys + blank, rnd)
+                Question(id, Game.SCRIPT, null, blanked(line), line.fr, line.en, opts, ans, full(line), gloss, line.why, opts.map { null }, tip = tip)
+            }
+            'd' -> {
+                val (opts, ans) = pick(line.fr, others.map { it.fr }, rnd)
+                Question(id, Game.DOUBLAGE, null, line.en, null, line.en, opts, ans, full(line), gloss, line.why,
+                    opts.map { o -> if (o == line.fr) null else enOfFr[o]?.let { "« $o » se dirait plutôt « $it »." } }, tip = tip)
+            }
+            'k' -> {
+                val (opts, ans) = pick(line.en, others.map { it.en }, rnd)
+                Question(id, Game.CASTING, null, line.en, null, line.en, opts, ans, full(line), gloss, line.why,
+                    opts.map { o -> if (o == line.en) null else frOfEn[o]?.let { "Tu as choisi « $o », qui veut dire « $it »." } }, tip = tip)
+            }
+            't' -> subtitling(id, line, others, rnd, tip)
+            'm' -> montage(id, line, rnd, tip)
+            else -> null
+        }
+    }
+
     fun question(id: String, rnd: Random, myLines: List<MyLine> = emptyList(), pool: List<Genre> = emptyList()): Question? {
+        BANK_ID.matchEntire(id)?.let { m ->
+            val genre = ALL_GENRES.firstOrNull { it.id == m.groupValues[1] } ?: return null
+            return bankQuestion(genre, m.groupValues[2].toInt(), m.groupValues[3][0], rnd)
+        }
         if (id.startsWith(MY_PREFIX)) {
             val lineId = id.removePrefix(MY_PREFIX).substringBeforeLast('-')
             val line = myLines.firstOrNull { it.id == lineId } ?: return null
@@ -157,18 +246,23 @@ object Studio {
     }
 
     /**
-     * Une scène = 2 doublages, 2 scripts troués, 1 casting,
-     * jusqu'à 2 « Prise 2 » (répliques ratées avant ou répliques notées) puis 3 mots en clap de fin.
+     * Une scène = 2 doublages, 2 scripts troués, 1 casting, 1 montage, 1 sous-titrage,
+     * jusqu'à 2 « Prise 2 » (répliques ratées avant ou répliques notées) puis 2 mots en clap de fin.
      * [pool] = thèmes et films du profil, pour ne reprendre que des questions de son niveau.
      */
     fun session(pool: List<Genre>, genre: Genre, scene: Scene, missed: Set<String>, myLines: List<MyLine>, rnd: Random): List<Question> {
         val all = candidates(genre, scene, rnd)
         val main = all.filter { it.game != Game.CLAP }
         val sameLevel = pool.flatMap { g -> g.scenes.map { it.id } }.toSet()
+        val levelGenres = pool.map { it.id }.toSet()
         val retakes = missed
             .filter { id ->
-                if (id.startsWith(MY_PREFIX)) true
-                else !id.startsWith(scene.id + "-") && id.substringBeforeLast('-') in sameLevel
+                val bank = BANK_ID.matchEntire(id)
+                when {
+                    id.startsWith(MY_PREFIX) -> true
+                    bank != null -> bank.groupValues[1] in levelGenres
+                    else -> !id.startsWith(scene.id + "-") && id.substringBeforeLast('-') in sameLevel
+                }
             }
             .shuffled(rnd)
             .mapNotNull { question(it, rnd, myLines, pool)?.copy(retake = true) }
@@ -179,7 +273,7 @@ object Studio {
             val q = myQuestion(line, "d", myLines, pool, rnd)
             if (retakes.none { it.id == q.id }) retakes += q.copy(retake = true)
         }
-        val clap = all.filter { it.game == Game.CLAP }.shuffled(rnd).take(3)
+        val clap = all.filter { it.game == Game.CLAP }.shuffled(rnd).take(2)
         return main + retakes + clap
     }
 
@@ -187,25 +281,80 @@ object Studio {
     const val EVAL_SIZE = 12
 
     /**
-     * L'avant-première d'un thème : pour chaque scène, un script troué (grammaire),
-     * un doublage et une écoute ou un mot, soit 12 questions mélangées.
+     * L'avant-première d'un thème : 12 phrases nouvelles tirées au hasard dans la banque du thème,
+     * en script troué, doublage, casting, sous-titrage et montage.
      */
-    fun evaluation(genre: Genre, rnd: Random): List<Question> =
-        genre.scenes.flatMapIndexed { i, s ->
-            val c = candidates(genre, s, rnd)
-            listOfNotNull(
-                c.filter { it.game == Game.SCRIPT }.randomOrNull(rnd),
-                c.filter { it.game == Game.DOUBLAGE }.randomOrNull(rnd),
-                if (i % 2 == 0) c.firstOrNull { it.game == Game.CASTING } else c.filter { it.game == Game.CLAP }.randomOrNull(rnd),
-            )
-        }.shuffled(rnd).take(EVAL_SIZE)
+    fun evaluation(genre: Genre, rnd: Random): List<Question> {
+        val bank = EVAL_BANK[genre.id]
+        if (bank.isNullOrEmpty()) {
+            return genre.scenes.flatMap { s -> candidates(genre, s, rnd).filter { it.game == Game.SCRIPT } }.shuffled(rnd).take(EVAL_SIZE)
+        }
+        val codes = "sssddkkttmms".toList().shuffled(rnd)
+        return bank.indices.shuffled(rnd).take(EVAL_SIZE)
+            .mapIndexedNotNull { n, i -> bankQuestion(genre, i, codes[n % codes.size], rnd) }
+    }
+
+    /** Les rushes : mini-révision des mots de la scène (4 mots de la scène + 2 mots des répliques). */
+    fun rushes(genre: Genre, scene: Scene, rnd: Random): List<Question> {
+        data class Item(val id: String, val en: String, val fr: String)
+        val known = scene.words.map { it.en.lowercase() }.toSet()
+        val glossWords = scene.lines.flatMap { line ->
+            line.gloss.split(" · ").mapNotNull { part ->
+                val p = part.split(" = ")
+                if (p.size != 2) null else p[0].trim() to p[1].trim()
+            }
+        }.filter { (en, fr) ->
+            en.isNotEmpty() && fr.isNotEmpty() && en.lowercase() !in known &&
+                en.split(" ").size <= 2 && fr.length <= 32 && !en.contains('(') && !en.contains('…')
+        }.distinctBy { it.first.lowercase() }
+        val items = scene.words.mapIndexed { i, w -> Item("${scene.id}-c$i", w.en, w.fr) } +
+            glossWords.shuffled(rnd).take(2).mapIndexed { j, (en, fr) -> Item("${scene.id}-g$j", en, fr) }
+        val frPool = genre.scenes.flatMap { it.words }.map { it.fr } + glossWords.map { it.second }
+        val enPool = genre.scenes.flatMap { it.words }.map { it.en } + glossWords.map { it.first }
+        val kinds = listOf("enfr", "fren", "listen", "write", "fren", "write")
+        return items.shuffled(rnd).mapIndexed { n, item ->
+            val kind = kinds[n % kinds.size]
+            val translation = "${item.en} = ${item.fr}"
+            when (kind) {
+                "enfr" -> pick(item.fr, frPool + item.fr, rnd).let { (opts, ans) ->
+                    Question(item.id, Game.RUSHES, null, item.en, null, item.en, opts, ans, translation, null, null, opts.map { null },
+                        instruction = "Que veut dire ce mot ?", kind = kind)
+                }
+                "fren" -> pick(item.en, enPool + item.en, rnd).let { (opts, ans) ->
+                    Question(item.id, Game.RUSHES, null, item.fr, null, item.en, opts, ans, translation, null, null, opts.map { null },
+                        instruction = "Comment dit-on en anglais ?", kind = kind)
+                }
+                "listen" -> pick(item.en, enPool + item.en, rnd).let { (opts, ans) ->
+                    Question(item.id, Game.RUSHES, null, "", null, item.en, opts, ans, translation, null, null, opts.map { null },
+                        instruction = "Quel mot as-tu entendu ?", kind = kind)
+                }
+                else -> Question(item.id, Game.RUSHES, null, item.fr, null, item.en, emptyList(), -1, translation, null, null, emptyList(),
+                    mode = Mode.TYPE, expected = item.en, instruction = "Écris ce mot en anglais :", kind = kind)
+            }
+        }
+    }
 
     /** La règle de la scène d'où vient une question. */
-    fun tipOf(q: Question): Tip? = find(q.id.substringBeforeLast('-'))?.second?.tip
+    fun tipOf(q: Question): Tip? = q.tip ?: find(q.id.substringBeforeLast('-'))?.second?.tip
 
     /** Révision de « Mes répliques » : jusqu'à 8 questions, doublage et casting mélangés. */
     fun mySession(myLines: List<MyLine>, pool: List<Genre>, rnd: Random): List<Question> =
         myLines.flatMap { line -> listOf("d", "k").map { myQuestion(line, it, myLines, pool, rnd) } }
             .shuffled(rnd)
             .take(8)
+}
+
+/** Même question, options remélangées : pour la reposer tout de suite (rushes). */
+fun Question.reshuffled(rnd: Random): Question = when (mode) {
+    Mode.TILES -> copy(tiles = tiles.shuffled(rnd), retake = true)
+    Mode.TYPE -> copy(tiles = tiles.shuffled(rnd), retake = true)
+    Mode.CHOICE -> {
+        val order = options.indices.shuffled(rnd)
+        copy(
+            options = order.map { options[it] },
+            optionNotes = order.map { optionNotes.getOrNull(it) },
+            answer = order.indexOf(answer),
+            retake = true,
+        )
+    }
 }
